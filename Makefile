@@ -17,7 +17,7 @@ XGOVERSION ?= 1.9.2
 XGOIMAGE = statusteam/xgo:$(XGOVERSION)
 XGOIMAGEIOSSIM = statusteam/xgo-ios-simulator:$(XGOVERSION)
 
-DOCKER_IMAGE_NAME ?= status-go
+DOCKER_IMAGE_NAME ?= statusteam/status-go
 
 UNIT_TEST_PACKAGES := $(shell go list ./...  | grep -v /vendor | grep -v /t/e2e | grep -v /cmd | grep -v /lib)
 

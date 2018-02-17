@@ -173,6 +173,10 @@ func startCollectingStats(interruptCh <-chan struct{}, nodeManager common.NodeMa
 		}
 	}()
 
+	if server == nil {
+		return
+	}
+
 	<-interruptCh
 
 	if err := server.Shutdown(context.TODO()); err != nil {

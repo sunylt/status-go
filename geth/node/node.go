@@ -18,10 +18,10 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/nat"
-	"github.com/ethereum/go-ethereum/whisper/mailserver"
 	"github.com/ethereum/go-ethereum/whisper/notifications"
 	whisper "github.com/ethereum/go-ethereum/whisper/whisperv5"
 	"github.com/status-im/status-go/geth/log"
+	"github.com/status-im/status-go/geth/mailserver"
 	"github.com/status-im/status-go/geth/params"
 	shhmetrics "github.com/status-im/status-go/metrics/whisper"
 )
@@ -177,9 +177,14 @@ func activateShhService(stack *node.Node, config *params.NodeConfig) error {
 
 			log.Info("Register MailServer")
 
-			var mailServer mailserver.WMailServer
-			whisperService.RegisterServer(&mailServer)
+			mailServer := mailserver.New()
+			whisperService.RegisterServer(mailServer)
 			mailServer.Init(whisperService, whisperConfig.DataDir, whisperConfig.Password, whisperConfig.MinimumPoW)
+
+			go func() {
+				log.Info("Starting a WS server")
+				log.Error("MailServer WS server", "err", mailServer.ListenAndServe("127.0.0.1:8081"))
+			}()
 		}
 
 		// enable notification service
