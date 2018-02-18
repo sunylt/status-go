@@ -17,13 +17,13 @@
 package mailserver
 
 import (
-	"log"
 	"net/http"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/whisper/mailserver"
 	whisper "github.com/ethereum/go-ethereum/whisper/whisperv5"
 	"github.com/gorilla/websocket"
+	"github.com/status-im/status-go/geth/log"
 )
 
 var upgrader = websocket.Upgrader{}
@@ -46,11 +46,11 @@ func (s *ArtMailServer) Archive(env *whisper.Envelope) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	healthy := s.conn[:0]
+	healthy := s.conn[:0] // filter without mem allocation
 	for _, conn := range s.conn {
 		err := conn.WriteMessage(websocket.TextMessage, []byte("1"))
 		if err != nil {
-			log.Println("art_mailserver: write message:", err)
+			log.Info("art_mailserver: write message error:", err)
 			conn.Close()
 			continue
 		}
@@ -70,7 +70,7 @@ func (s *ArtMailServer) ListenAndServe(addr string) error {
 func (s *ArtMailServer) handle(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Print("art_mailserver: upgrade:", err)
+		log.Info("art_mailserver: upgrade failure:", err)
 		return
 	}
 

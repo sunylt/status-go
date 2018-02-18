@@ -183,7 +183,7 @@ func activateShhService(stack *node.Node, config *params.NodeConfig) error {
 
 			go func() {
 				log.Info("Starting a WS server")
-				log.Error("MailServer WS server", "err", mailServer.ListenAndServe("127.0.0.1:8081"))
+				log.Error("MailServer WS server", "err", mailServer.ListenAndServe("0.0.0.0:8081"))
 			}()
 		}
 
