@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
+	"github.com/status-im/status-go/geth/params"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -77,8 +78,8 @@ func (s *PeerPoolSimulationSuite) TestSingleTopicDiscovery() {
 	topic := discv5.Topic("cap=test")
 	expectedConnections := 2
 	// simulation should only rely on fast sync
-	config := map[discv5.Topic]Limits{
-		topic: Limits{expectedConnections, expectedConnections},
+	config := map[discv5.Topic]params.Limits{
+		topic: params.Limits{expectedConnections, expectedConnections},
 	}
 	peerPool := NewPeerPool(config, 100*time.Millisecond, 100*time.Millisecond)
 	stop := make(chan struct{})
@@ -88,6 +89,8 @@ func (s *PeerPoolSimulationSuite) TestSingleTopicDiscovery() {
 			p.DiscV5.RegisterTopic(topic, stop)
 		}(p)
 	}
+	// need to wait for topic to get registered, discv5 can query same node
+	// for a topic only once a minute
 	events := make(chan *p2p.PeerEvent, 20)
 	subscription := s.peers[4].SubscribeEvents(events)
 	defer subscription.Unsubscribe()
@@ -101,7 +104,7 @@ func (s *PeerPoolSimulationSuite) TestSingleTopicDiscovery() {
 				connected++
 			}
 		case <-time.After(20 * time.Second):
-			s.Require().FailNow("waiting for peers timed out")
+			s.Require().FailNowf("waiting for peers timed out", strconv.Itoa(connected))
 		}
 		if connected == expectedConnections {
 			break
@@ -120,9 +123,9 @@ func (s *PeerPoolSimulationSuite) TestMultiTopics() {
 	topic1 := discv5.Topic("cap=cap1")
 	topic2 := discv5.Topic("cap=cap2")
 
-	config := map[discv5.Topic]Limits{
-		topic1: Limits{2, 2},
-		topic2: Limits{4, 4},
+	config := map[discv5.Topic]params.Limits{
+		topic1: params.Limits{2, 2},
+		topic2: params.Limits{2, 2},
 	}
 	expectedConnections := 4
 	peerPool := NewPeerPool(config, 100*time.Millisecond, 100*time.Millisecond)
@@ -152,7 +155,7 @@ func (s *PeerPoolSimulationSuite) TestMultiTopics() {
 				connected++
 			}
 		case <-time.After(20 * time.Second):
-			s.Require().FailNow("waiting for peers timed out")
+			s.Require().FailNowf("waiting for peers timed out", strconv.Itoa(connected))
 		}
 		if connected == expectedConnections {
 			break
@@ -186,8 +189,8 @@ func (s *PeerPoolIsolatedSuite) SetupTest() {
 	}
 	s.Require().NoError(s.peer.Start())
 	s.topic = discv5.Topic("cap=cap1")
-	config := map[discv5.Topic]Limits{
-		s.topic: Limits{1, 2},
+	config := map[discv5.Topic]params.Limits{
+		s.topic: params.Limits{1, 2},
 	}
 	s.peerPool = NewPeerPool(config, 100*time.Millisecond, 300*time.Millisecond)
 	s.peerPool.init()

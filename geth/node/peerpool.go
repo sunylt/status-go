@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
+	"github.com/status-im/status-go/geth/params"
 )
 
 var (
@@ -43,11 +44,8 @@ const (
 	defaultSlowSync = 1 * time.Minute
 )
 
-// Limits represent min and max amount of peers
-type Limits [2]int
-
 // NewPeerPool creates instance of PeerPool
-func NewPeerPool(config map[discv5.Topic]Limits, fastSync, slowSync time.Duration) *PeerPool {
+func NewPeerPool(config map[discv5.Topic]params.Limits, fastSync, slowSync time.Duration) *PeerPool {
 	return &PeerPool{
 		config:   config,
 		fastSync: fastSync,
@@ -70,7 +68,7 @@ type peerInfo struct {
 // PeerPool manages discovered peers and connects them to p2p server
 type PeerPool struct {
 	// config can be set only once per pool life cycle
-	config   map[discv5.Topic]Limits
+	config   map[discv5.Topic]params.Limits
 	fastSync time.Duration
 	slowSync time.Duration
 
@@ -114,7 +112,7 @@ func (p *PeerPool) Start(server *p2p.Server) error {
 		period := make(chan time.Duration, 2)
 		p.syncPeriods = append(p.syncPeriods, period)
 		found := make(chan *discv5.Node, 10)
-		lookup := make(chan bool, 10)
+		lookup := make(chan bool, 100)
 		events := make(chan *p2p.PeerEvent, 20)
 		subscription := server.SubscribeEvents(events)
 		p.subscriptions = append(p.subscriptions, subscription)

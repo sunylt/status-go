@@ -94,7 +94,7 @@ func defaultEmbeddedNodeConfig(config *params.NodeConfig) *node.Config {
 		Name:              config.Name,
 		Version:           config.Version,
 		P2P: p2p.Config{
-			NoDiscovery:      !config.Discovery,
+			NoDiscovery:      true,
 			DiscoveryV5:      config.Discovery,
 			BootstrapNodes:   nil,
 			BootstrapNodesV5: nil,

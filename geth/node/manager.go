@@ -52,6 +52,9 @@ type Manager struct {
 	lesService     *les.LightEthereum // reference to LES service
 	rpcClient      *rpc.Client        // reference to RPC client
 	log            log.Logger
+
+	register *Register
+	peerPool *PeerPool
 }
 
 // NewManager makes new instance of node manager
@@ -101,6 +104,16 @@ func (m *Manager) startNode(config *params.NodeConfig) error {
 		m.log.Error("Failed to create an RPC client", "error", err)
 		return RPCClientError(err)
 	}
+	m.register = NewResigter(m.config.RegisterTopics...)
+	m.peerPool = NewPeerPool(m.config.RequireTopics, defaultFastSync, defaultSlowSync)
+	if ethNode.Server().DiscV5 != nil {
+		if err := m.register.Start(ethNode.Server()); err != nil {
+			return err
+		}
+		if err := m.peerPool.Start(ethNode.Server()); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -119,6 +132,8 @@ func (m *Manager) stopNode() error {
 	if err := m.node.Stop(); err != nil {
 		return err
 	}
+	m.register.Stop()
+	m.peerPool.Stop()
 	m.node = nil
 	m.config = nil
 	m.lesService = nil
