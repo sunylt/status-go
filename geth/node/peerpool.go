@@ -134,11 +134,15 @@ func (p *PeerPool) handlePeersFromTopic(server *p2p.Server, topic discv5.Topic, 
 	fast := true
 	period <- p.fastSync
 	connected := 0
+	selfID := discv5.NodeID(server.Self().ID)
 	for {
 		select {
 		case <-p.quit:
 			return
 		case node := <-found:
+			if node.ID == selfID {
+				continue
+			}
 			if p.processFoundNode(server, connected, topic, node) {
 				connected++
 			}
