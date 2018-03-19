@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
+	"github.com/status-im/status-go/geth/log"
 	"github.com/status-im/status-go/geth/params"
 )
 
@@ -107,7 +108,7 @@ func (p *PeerPool) Start(server *p2p.Server) error {
 	// sync periods are stored because we need to close them once pool is stopped
 	p.init()
 
-	for topic := range p.config {
+	for topic, limits := range p.config {
 		topic := topic
 		period := make(chan time.Duration, 2)
 		p.syncPeriods = append(p.syncPeriods, period)
@@ -116,6 +117,7 @@ func (p *PeerPool) Start(server *p2p.Server) error {
 		events := make(chan *p2p.PeerEvent, 20)
 		subscription := server.SubscribeEvents(events)
 		p.subscriptions = append(p.subscriptions, subscription)
+		log.Debug("running peering for", "topic", topic, "limits", limits)
 		go func() {
 			server.DiscV5.SearchTopic(topic, period, found, lookup)
 			p.wg.Done()
@@ -140,6 +142,7 @@ func (p *PeerPool) handlePeersFromTopic(server *p2p.Server, topic discv5.Topic, 
 		case <-p.quit:
 			return
 		case node := <-found:
+			log.Debug("found node with", "ID", node.ID, "topic", topic)
 			if node.ID == selfID {
 				continue
 			}
@@ -156,6 +159,7 @@ func (p *PeerPool) handlePeersFromTopic(server *p2p.Server, topic discv5.Topic, 
 			// limit number of kademlia lookups
 		case event := <-events:
 			if event.Type == p2p.PeerEventTypeDrop {
+				log.Debug("node dropped", "ID", event.Peer, "topic", topic)
 				if !p.processDisconnectedNode(server, topic, event.Peer) {
 					connected--
 				}
@@ -194,6 +198,7 @@ func (p *PeerPool) processFoundNode(server *p2p.Server, currentlyConnected int, 
 		}
 	}
 	if currentlyConnected < limits[1] && !peersTable[node.ID].connected {
+		log.Debug("peer connected", "ID", node.ID, "topic", topic)
 		server.AddPeer(peersTable[node.ID].node)
 		peersTable[node.ID].connected = true
 		connected = true
@@ -214,6 +219,7 @@ func (p *PeerPool) processDisconnectedNode(server *p2p.Server, topic discv5.Topi
 	// TODO use a heap queue and always get a peer that was discovered recently
 	for _, info := range peersTable {
 		if !info.connected && !info.dropped && mclock.Now() < info.discoveredTime+mclock.AbsTime(foundTimeout) {
+			log.Debug("adding peer from pool", "ID", info.node.ID, "topic", topic)
 			server.AddPeer(info.node)
 			connected = true
 			info.connected = true

@@ -5,6 +5,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
+	"github.com/status-im/status-go/geth/log"
 )
 
 // Register manages register topic queries
@@ -29,6 +30,7 @@ func (r *Register) Start(server *p2p.Server) error {
 	for _, topic := range r.topics {
 		r.wg.Add(1)
 		go func(t discv5.Topic) {
+			log.Debug("v5 register topic", "topic", t)
 			server.DiscV5.RegisterTopic(t, r.quit)
 			r.wg.Done()
 		}(topic)
