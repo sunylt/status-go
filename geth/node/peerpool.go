@@ -41,8 +41,8 @@ var (
 
 const (
 	foundTimeout    = 90 * time.Second
-	defaultFastSync = 3 * time.Second
-	defaultSlowSync = 1 * time.Minute
+	defaultFastSync = 5 * time.Second
+	defaultSlowSync = 3 * time.Minute
 )
 
 // NewPeerPool creates instance of PeerPool
@@ -151,6 +151,7 @@ func (p *PeerPool) handlePeersFromTopic(server *p2p.Server, topic discv5.Topic, 
 			}
 			// switch period only once
 			if fast && connected >= limits[0] {
+				log.Debug("switch to slow sync", "topic", topic, "sync", p.slowSync)
 				period <- p.slowSync
 				fast = false
 			}
@@ -165,11 +166,13 @@ func (p *PeerPool) handlePeersFromTopic(server *p2p.Server, topic discv5.Topic, 
 				}
 				// switch period only once
 				if !fast && connected < limits[0] {
+					log.Debug("switch to fast sync", "topic", topic, "sync", p.fastSync)
 					period <- p.fastSync
 					fast = true
 				}
+			} else if event.Type == p2p.PeerEventTypeAdd {
+				//
 			}
-
 		}
 	}
 }
