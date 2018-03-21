@@ -40,8 +40,9 @@ var (
 )
 
 const (
-	autoRefreshInterval   = 1 * time.Hour
-	bucketRefreshInterval = 1 * time.Minute
+	autoRefreshInterval = 1 * time.Hour
+	// spams the network, we do enough lookups when topic is being search
+	bucketRefreshInterval = 120 * time.Minute
 	seedCount             = 30
 	seedMaxAge            = 5 * 24 * time.Hour
 	lowPort               = 1024
@@ -507,8 +508,9 @@ loop:
 				topicRegisterLookupDone = nil
 			} else {
 				topicRegisterLookupDone = make(chan []*Node)
-				target := topicRegisterLookupTarget.target
-				go func() { topicRegisterLookupDone <- net.lookup(target, false) }()
+				// this spams network too much, we will use bootnodes as a mediator
+				// between leafs and central nodes
+				go func() { topicRegisterLookupDone <- net.nursery }()
 			}
 
 		case <-nextRegisterTime:
