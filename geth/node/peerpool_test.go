@@ -55,7 +55,7 @@ func (s *PeerPoolSimulationSuite) SetupTest() {
 	s.Require().NoError(s.bootnode.Start())
 	bootnodeV5 := discv5.NewNode(s.bootnode.DiscV5.Self().ID, net.ParseIP("127.0.0.1"), uint16(port), uint16(port))
 
-	s.peers = make([]*p2p.Server, 5)
+	s.peers = make([]*p2p.Server, 3)
 	for i := range s.peers {
 		key, _ := crypto.GenerateKey()
 		peer := &p2p.Server{
@@ -76,25 +76,23 @@ func (s *PeerPoolSimulationSuite) SetupTest() {
 
 func (s *PeerPoolSimulationSuite) TestSingleTopicDiscovery() {
 	topic := discv5.Topic("cap=test")
-	expectedConnections := 2
+	expectedConnections := 1
 	// simulation should only rely on fast sync
 	config := map[discv5.Topic]params.Limits{
 		topic: params.Limits{expectedConnections, expectedConnections},
 	}
 	peerPool := NewPeerPool(config, 100*time.Millisecond, 100*time.Millisecond)
-	stop := make(chan struct{})
-	defer close(stop)
-	for _, p := range s.peers[:expectedConnections] {
-		go func(p *p2p.Server) {
-			p.DiscV5.RegisterTopic(topic, stop)
-		}(p)
+	for _, p := range s.peers[:2] {
+		register := NewResigter(topic)
+		s.Require().NoError(register.Start(p))
+		defer register.Stop()
 	}
 	// need to wait for topic to get registered, discv5 can query same node
 	// for a topic only once a minute
 	events := make(chan *p2p.PeerEvent, 20)
-	subscription := s.peers[4].SubscribeEvents(events)
+	subscription := s.peers[2].SubscribeEvents(events)
 	defer subscription.Unsubscribe()
-	peerPool.Start(s.peers[4])
+	peerPool.Start(s.peers[2])
 	defer peerPool.Stop()
 	connected := 0
 	for {
@@ -116,50 +114,6 @@ func (s *PeerPoolSimulationSuite) TearDown() {
 	s.bootnode.Stop()
 	for _, p := range s.peers {
 		p.Stop()
-	}
-}
-
-func (s *PeerPoolSimulationSuite) TestMultiTopics() {
-	topic1 := discv5.Topic("cap=cap1")
-	topic2 := discv5.Topic("cap=cap2")
-
-	config := map[discv5.Topic]params.Limits{
-		topic1: params.Limits{2, 2},
-		topic2: params.Limits{2, 2},
-	}
-	expectedConnections := 4
-	peerPool := NewPeerPool(config, 100*time.Millisecond, 100*time.Millisecond)
-	stop := make(chan struct{})
-	defer close(stop)
-
-	for _, p := range s.peers[0:2] {
-		go func(p *p2p.Server) {
-			p.DiscV5.RegisterTopic(topic1, stop)
-		}(p)
-	}
-	for _, p := range s.peers[2:4] {
-		go func(p *p2p.Server) {
-			p.DiscV5.RegisterTopic(topic2, stop)
-		}(p)
-	}
-	events := make(chan *p2p.PeerEvent, 20)
-	subscription := s.peers[4].SubscribeEvents(events)
-	defer subscription.Unsubscribe()
-	peerPool.Start(s.peers[4])
-	defer peerPool.Stop()
-	connected := 0
-	for {
-		select {
-		case ev := <-events:
-			if ev.Type == p2p.PeerEventTypeAdd {
-				connected++
-			}
-		case <-time.After(20 * time.Second):
-			s.Require().FailNowf("waiting for peers timed out", strconv.Itoa(connected))
-		}
-		if connected == expectedConnections {
-			break
-		}
 	}
 }
 

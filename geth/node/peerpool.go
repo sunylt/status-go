@@ -40,9 +40,9 @@ var (
 )
 
 const (
-	foundTimeout    = 90 * time.Second
-	defaultFastSync = 5 * time.Second
-	defaultSlowSync = 3 * time.Minute
+	foundTimeout    = 60 * time.Minute
+	defaultFastSync = 500 * time.Millisecond
+	defaultSlowSync = 30 * time.Minute
 )
 
 // NewPeerPool creates instance of PeerPool
@@ -171,7 +171,7 @@ func (p *PeerPool) handlePeersFromTopic(server *p2p.Server, topic discv5.Topic, 
 					fast = true
 				}
 			} else if event.Type == p2p.PeerEventTypeAdd {
-				//
+				// TODO take into account inbound connections
 			}
 		}
 	}
@@ -217,6 +217,10 @@ func (p *PeerPool) processDisconnectedNode(server *p2p.Server, topic discv5.Topi
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	peersTable := p.peers[topic]
+	// either inbound or connected from another topic
+	if _, exist := peersTable[discv5.NodeID(nodeID)]; !exist {
+		return true
+	}
 	node := peersTable[discv5.NodeID(nodeID)].node
 	server.RemovePeer(node)
 	// TODO use a heap queue and always get a peer that was discovered recently
