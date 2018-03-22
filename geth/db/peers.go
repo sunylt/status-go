@@ -12,12 +12,12 @@ type PeersDatabase struct {
 	db *leveldb.DB
 }
 
-func makePeerKey(peer *discv5.Node, topic discv5.Topic) []byte {
+func makePeerKey(peerID discv5.NodeID, topic discv5.Topic) []byte {
 	topicLth := len([]byte(topic))
-	lth := topicLth + len(peer.ID)
+	lth := topicLth + len(peerID)
 	key := make([]byte, lth)
 	copy(key[:], []byte(topic)[:])
-	copy(key[topicLth:], peer.ID[:])
+	copy(key[topicLth:], peerID[:])
 	return key
 }
 
@@ -27,12 +27,12 @@ func (d *PeersDatabase) AddPeer(peer *discv5.Node, topic discv5.Topic) error {
 	if err != nil {
 		return err
 	}
-	return d.db.Put(makePeerKey(peer, topic), data, nil)
+	return d.db.Put(makePeerKey(peer.ID, topic), data, nil)
 }
 
 // RemovePeer deletes a peer from database.
-func (d *PeersDatabase) RemovePeer(peer *discv5.Node, topic discv5.Topic) error {
-	return d.db.Delete(makePeerKey(peer, topic), nil)
+func (d *PeersDatabase) RemovePeer(peerID discv5.NodeID, topic discv5.Topic) error {
+	return d.db.Delete(makePeerKey(peerID, topic), nil)
 }
 
 // GetPeers returns peers for a given topic with a limit.

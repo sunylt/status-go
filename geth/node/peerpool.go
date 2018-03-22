@@ -27,10 +27,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/mclock"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
-	"github.com/status-im/status-go/geth/log"
+	"github.com/status-im/status-go/geth/db"
 	"github.com/status-im/status-go/geth/params"
 )
 
@@ -73,6 +74,8 @@ type PeerPool struct {
 	fastSync time.Duration
 	slowSync time.Duration
 
+	cache *db.PeersDatabase
+
 	mu sync.RWMutex
 	// TODO split this into separate maps to avoid unnecessary locking
 	peers         map[discv5.Topic]map[discv5.NodeID]*peerInfo
@@ -113,6 +116,11 @@ func (p *PeerPool) Start(server *p2p.Server) error {
 		period := make(chan time.Duration, 2)
 		p.syncPeriods = append(p.syncPeriods, period)
 		found := make(chan *discv5.Node, 10)
+		if p.cache != nil {
+			for _, node := range p.cache.GetPeersRange(topic, 5) {
+				found <- node
+			}
+		}
 		lookup := make(chan bool, 100)
 		events := make(chan *p2p.PeerEvent, 20)
 		subscription := server.SubscribeEvents(events)
@@ -205,6 +213,11 @@ func (p *PeerPool) processFoundNode(server *p2p.Server, currentlyConnected int, 
 		server.AddPeer(peersTable[node.ID].node)
 		peersTable[node.ID].connected = true
 		connected = true
+		if p.cache != nil {
+			if err := p.cache.AddPeer(node, topic); err != nil {
+				log.Error("failed to persist a peer", "error", err)
+			}
+		}
 	}
 	return connected
 }
@@ -223,10 +236,24 @@ func (p *PeerPool) processDisconnectedNode(server *p2p.Server, topic discv5.Topi
 	}
 	node := peersTable[discv5.NodeID(nodeID)].node
 	server.RemovePeer(node)
+	if p.cache != nil {
+		if err := p.cache.RemovePeer(discv5.NodeID(nodeID), topic); err != nil {
+			log.Error("failed to remove peer from cache", "error", err)
+		}
+	}
+
 	// TODO use a heap queue and always get a peer that was discovered recently
 	for _, info := range peersTable {
 		if !info.connected && !info.dropped && mclock.Now() < info.discoveredTime+mclock.AbsTime(foundTimeout) {
 			log.Debug("adding peer from pool", "ID", info.node.ID, "topic", topic)
+			if p.cache != nil {
+				// this conversions are getting funny
+				if err := p.cache.AddPeer(discv5.NewNode(
+					discv5.NodeID(info.node.ID),
+					info.node.IP, info.node.UDP, info.node.TCP), topic); err != nil {
+					log.Error("failed to persist a peer", "error", err)
+				}
+			}
 			server.AddPeer(info.node)
 			connected = true
 			info.connected = true

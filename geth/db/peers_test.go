@@ -40,6 +40,6 @@ func TestPeersRange(t *testing.T) {
 	assert.Equal(t, peers[0].String(), nodes[1].String())
 	assert.Equal(t, peers[1].String(), nodes[2].String())
 
-	peersDB.RemovePeer(peers[1], topic)
+	peersDB.RemovePeer(peers[1].ID, topic)
 	require.Len(t, peersDB.GetPeersRange(topic, 3), 2)
 }

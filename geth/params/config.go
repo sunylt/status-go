@@ -11,12 +11,8 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/core"
-<<<<<<< HEAD
 	"github.com/ethereum/go-ethereum/log"
-=======
 	"github.com/ethereum/go-ethereum/p2p/discv5"
-	"github.com/status-im/status-go/geth/log"
->>>>>>> Add topic register and parse options from command line
 	"github.com/status-im/status-go/static"
 )
 
@@ -184,16 +180,14 @@ func (c *ClusterConfig) String() string {
 	return string(data)
 }
 
-<<<<<<< HEAD
-// ----------
-// UpstreamRPCConfig
-// ----------
-=======
 // Limits represent min and max amount of peers
 type Limits [2]int
 
+// ----------
+// UpstreamRPCConfig
+// ----------
+
 //=====================================================================================
->>>>>>> Add topic register and parse options from command line
 
 // UpstreamRPCConfig stores configuration for upstream rpc connection.
 type UpstreamRPCConfig struct {

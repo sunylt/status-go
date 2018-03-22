@@ -3,9 +3,9 @@ package node
 import (
 	"sync"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
-	"github.com/status-im/status-go/geth/log"
 )
 
 // Register manages register topic queries
