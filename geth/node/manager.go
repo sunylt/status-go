@@ -16,7 +16,9 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	whisper "github.com/ethereum/go-ethereum/whisper/whisperv6"
+	"github.com/syndtr/goleveldb/leveldb"
 
+	"github.com/status-im/status-go/geth/db"
 	"github.com/status-im/status-go/geth/mailservice"
 	"github.com/status-im/status-go/geth/params"
 	"github.com/status-im/status-go/geth/rpc"
@@ -44,17 +46,17 @@ type EthNodeError error
 // nolint: golint
 // should be fixed at https://github.com/status-im/status-go/issues/200
 type Manager struct {
-	mu     sync.RWMutex
-	config *params.NodeConfig // Status node configuration
-	node   *node.Node         // reference to Geth P2P stack/node
+	mu       sync.RWMutex
+	config   *params.NodeConfig // Status node configuration
+	node     *node.Node         // reference to Geth P2P stack/node
+	register *Register
+	peerPool *PeerPool
+	db       *leveldb.DB
 
 	whisperService *whisper.Whisper   // reference to Whisper service
 	lesService     *les.LightEthereum // reference to LES service
 	rpcClient      *rpc.Client        // reference to RPC client
 	log            log.Logger
-
-	register *Register
-	peerPool *PeerPool
 }
 
 // NewManager makes new instance of node manager
@@ -104,9 +106,14 @@ func (m *Manager) startNode(config *params.NodeConfig) error {
 		m.log.Error("Failed to create an RPC client", "error", err)
 		return RPCClientError(err)
 	}
-	m.register = NewResigter(m.config.RegisterTopics...)
-	m.peerPool = NewPeerPool(m.config.RequireTopics, defaultFastSync, defaultSlowSync)
 	if ethNode.Server().DiscV5 != nil {
+		statusDB, err := db.CreateDatabase(filepath.Join(m.config.DataDir, params.StatusDatabase))
+		if err != nil {
+			return err
+		}
+		m.db = statusDB
+		m.register = NewResigter(m.config.RegisterTopics...)
+		m.peerPool = NewPeerPool(m.config.RequireTopics, defaultFastSync, defaultSlowSync, db.NewPeersDatabase(m.db))
 		if err := m.register.Start(ethNode.Server()); err != nil {
 			return err
 		}
@@ -129,11 +136,14 @@ func (m *Manager) stopNode() error {
 	if err := m.isNodeAvailable(); err != nil {
 		return err
 	}
+	if m.node.Server().DiscV5 != nil {
+		m.db.Close()
+		m.register.Stop()
+		m.peerPool.Stop()
+	}
 	if err := m.node.Stop(); err != nil {
 		return err
 	}
-	m.register.Stop()
-	m.peerPool.Stop()
 	m.node = nil
 	m.config = nil
 	m.lesService = nil

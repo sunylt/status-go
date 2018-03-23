@@ -7,7 +7,7 @@ import (
 )
 
 // CreateDatabase returns status wrapper to leveldb.
-func CreateDatabase(path string) (*StatusDatabase, error) {
+func CreateDatabase(path string) (*leveldb.DB, error) {
 	opts := &opt.Options{OpenFilesCacheCapacity: 5}
 	db, err := leveldb.OpenFile(path, opts)
 	if _, iscorrupted := err.(*errors.ErrCorrupted); iscorrupted {
@@ -16,15 +16,5 @@ func CreateDatabase(path string) (*StatusDatabase, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &StatusDatabase{db}, err
-}
-
-// StatusDatabase wrapper for leveldb.
-type StatusDatabase struct {
-	db *leveldb.DB
-}
-
-// PeersDatabase creates an instance of PeerDatabase wrapper
-func (s *StatusDatabase) PeersDatabase() *PeersDatabase {
-	return &PeersDatabase{s.db}
+	return db, err
 }

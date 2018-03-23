@@ -47,11 +47,12 @@ const (
 )
 
 // NewPeerPool creates instance of PeerPool
-func NewPeerPool(config map[discv5.Topic]params.Limits, fastSync, slowSync time.Duration) *PeerPool {
+func NewPeerPool(config map[discv5.Topic]params.Limits, fastSync, slowSync time.Duration, cache *db.PeersDatabase) *PeerPool {
 	return &PeerPool{
 		config:   config,
 		fastSync: fastSync,
 		slowSync: slowSync,
+		cache:    cache,
 	}
 }
 
@@ -73,8 +74,7 @@ type PeerPool struct {
 	config   map[discv5.Topic]params.Limits
 	fastSync time.Duration
 	slowSync time.Duration
-
-	cache *db.PeersDatabase
+	cache    *db.PeersDatabase
 
 	mu sync.RWMutex
 	// TODO split this into separate maps to avoid unnecessary locking
@@ -117,8 +117,9 @@ func (p *PeerPool) Start(server *p2p.Server) error {
 		p.syncPeriods = append(p.syncPeriods, period)
 		found := make(chan *discv5.Node, 10)
 		if p.cache != nil {
-			for _, node := range p.cache.GetPeersRange(topic, 5) {
-				found <- node
+			for _, peer := range p.cache.GetPeersRange(topic, 5) {
+				log.Debug("adding a peer from cache", "peer", peer)
+				found <- peer
 			}
 		}
 		lookup := make(chan bool, 100)

@@ -7,6 +7,11 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
+// NewPeersDatabase returns instance of PeersDatabase
+func NewPeersDatabase(db *leveldb.DB) *PeersDatabase {
+	return &PeersDatabase{db: db}
+}
+
 // PeersDatabase maintains list of peers that were discovered.
 type PeersDatabase struct {
 	db *leveldb.DB
@@ -35,7 +40,7 @@ func (d *PeersDatabase) RemovePeer(peerID discv5.NodeID, topic discv5.Topic) err
 	return d.db.Delete(makePeerKey(peerID, topic), nil)
 }
 
-// GetPeers returns peers for a given topic with a limit.
+// GetPeersRange returns peers for a given topic with a limit.
 func (d *PeersDatabase) GetPeersRange(topic discv5.Topic, limit int) (nodes []*discv5.Node) {
 	topicLth := len([]byte(topic))
 	key := make([]byte, topicLth)

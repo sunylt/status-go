@@ -81,7 +81,7 @@ func (s *PeerPoolSimulationSuite) TestSingleTopicDiscovery() {
 	config := map[discv5.Topic]params.Limits{
 		topic: params.Limits{expectedConnections, expectedConnections},
 	}
-	peerPool := NewPeerPool(config, 100*time.Millisecond, 100*time.Millisecond)
+	peerPool := NewPeerPool(config, 100*time.Millisecond, 100*time.Millisecond, nil)
 	for _, p := range s.peers[:2] {
 		register := NewResigter(topic)
 		s.Require().NoError(register.Start(p))
@@ -146,7 +146,7 @@ func (s *PeerPoolIsolatedSuite) SetupTest() {
 	config := map[discv5.Topic]params.Limits{
 		s.topic: params.Limits{1, 2},
 	}
-	s.peerPool = NewPeerPool(config, 100*time.Millisecond, 300*time.Millisecond)
+	s.peerPool = NewPeerPool(config, 100*time.Millisecond, 300*time.Millisecond, nil)
 	s.peerPool.init()
 	s.peerPool.quit = make(chan struct{})
 }
