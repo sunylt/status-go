@@ -80,7 +80,7 @@ func (s *PeerPoolSimulationSuite) TestSingleTopicDiscovery() {
 	expectedConnections := 1
 	// simulation should only rely on fast sync
 	config := map[discv5.Topic]params.Limits{
-		topic: params.Limits{expectedConnections, expectedConnections},
+		topic: {expectedConnections, expectedConnections},
 	}
 	peerPool := NewPeerPool(config, 100*time.Millisecond, 100*time.Millisecond, nil)
 	for _, p := range s.peers[:2] {
@@ -145,7 +145,7 @@ func (s *PeerPoolIsolatedSuite) SetupTest() {
 	s.Require().NoError(s.peer.Start())
 	s.topic = discv5.Topic("cap=cap1")
 	config := map[discv5.Topic]params.Limits{
-		s.topic: params.Limits{1, 2},
+		s.topic: {1, 2},
 	}
 	s.peerPool = NewPeerPool(config, 100*time.Millisecond, 300*time.Millisecond, nil)
 	s.peerPool.init()
