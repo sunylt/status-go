@@ -61,11 +61,8 @@ type peerInfo struct {
 	discoveredTime mclock.AbsTime
 	// connected is true if node is added as a statis peer
 	connected bool
-	// dropped is true if node was dropped by p2p server
-	// it can become false only when kademlia will discover it again
-	dropped bool
 
-	node *discover.Node
+	node *discv5.Node
 }
 
 // PeerPool manages discovered peers and connects them to p2p server
@@ -105,12 +102,12 @@ func (p *PeerPool) Start(server *p2p.Server) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	// 2 goroutines per each topic
-	p.wg.Add(len(p.config) * 2)
 	p.quit = make(chan struct{})
 	// sync periods are stored because we need to close them once pool is stopped
 	p.init()
 
+	// 2 goroutines per each topic
+	p.wg.Add(len(p.config) * 2)
 	for topic, limits := range p.config {
 		topic := topic
 		period := make(chan time.Duration, 2)
@@ -198,20 +195,20 @@ func (p *PeerPool) processFoundNode(server *p2p.Server, currentlyConnected int, 
 	limits := p.config[topic]
 	if info, exist := peersTable[node.ID]; exist {
 		info.discoveredTime = mclock.Now()
-		info.dropped = false
 	} else {
 		peersTable[node.ID] = &peerInfo{
-			connected:      false,
-			dropped:        false,
 			discoveredTime: mclock.Now(),
-			node: discover.NewNode(
-				discover.NodeID(node.ID),
-				node.IP, node.UDP, node.TCP),
+			node:           node,
 		}
 	}
 	if currentlyConnected < limits[1] && !peersTable[node.ID].connected {
 		log.Debug("peer connected", "ID", node.ID, "topic", topic)
-		server.AddPeer(peersTable[node.ID].node)
+		server.AddPeer(discover.NewNode(
+			discover.NodeID(peersTable[node.ID].node.ID),
+			peersTable[node.ID].node.IP,
+			peersTable[node.ID].node.UDP,
+			peersTable[node.ID].node.TCP,
+		))
 		peersTable[node.ID].connected = true
 		connected = true
 		if p.cache != nil {
@@ -223,11 +220,11 @@ func (p *PeerPool) processFoundNode(server *p2p.Server, currentlyConnected int, 
 	return connected
 }
 
-// processDisconnectedNode is called when node was dropped by p2p server
+// processDisconnectedNode is called when node was disconnected by p2p server
 // - removes a peer, cause p2p server now relies on peer pool to maintain required connections number
 // - if there is a valid peer in peer table add it to a p2p server
 //   peer is valid if it wasn't dropped recently, it is not stale (90s) and not currently connected
-func (p *PeerPool) processDisconnectedNode(server *p2p.Server, topic discv5.Topic, nodeID discover.NodeID) (connected bool) {
+func (p *PeerPool) processDisconnectedNode(server *p2p.Server, topic discv5.Topic, nodeID discover.NodeID) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	peersTable := p.peers[topic]
@@ -235,35 +232,46 @@ func (p *PeerPool) processDisconnectedNode(server *p2p.Server, topic discv5.Topi
 	if _, exist := peersTable[discv5.NodeID(nodeID)]; !exist {
 		return true
 	}
-	node := peersTable[discv5.NodeID(nodeID)].node
-	server.RemovePeer(node)
+	p.removePeer(server, nodeID, topic)
+	// TODO use a heap queue and always get a peer that was discovered recently
+	for _, info := range peersTable {
+		if !info.connected && mclock.Now() < info.discoveredTime+mclock.AbsTime(foundTimeout) {
+			p.addPeer(server, info, topic)
+			return true
+		}
+	}
+	return false
+}
+
+func (p *PeerPool) addPeer(server *p2p.Server, info *peerInfo, topic discv5.Topic) {
+	server.AddPeer(discover.NewNode(
+		discover.NodeID(info.node.ID),
+		info.node.IP,
+		info.node.UDP,
+		info.node.TCP,
+	))
+	info.connected = true
+	if p.cache != nil {
+		if err := p.cache.AddPeer(info.node, topic); err != nil {
+			log.Error("failed to persist a peer", "error", err)
+		}
+	}
+}
+
+func (p *PeerPool) removePeer(server *p2p.Server, nodeID discover.NodeID, topic discv5.Topic) {
+	info := p.peers[topic][nodeID]
+	server.RemovePeer(discover.NewNode(
+		discover.NodeID(info.node.ID),
+		info.node.IP,
+		info.node.UDP,
+		info.node.TCP,
+	))
+	delete(p.peers[topic].peersTable, discv5.NodeID(nodeID))
 	if p.cache != nil {
 		if err := p.cache.RemovePeer(discv5.NodeID(nodeID), topic); err != nil {
 			log.Error("failed to remove peer from cache", "error", err)
 		}
 	}
-
-	// TODO use a heap queue and always get a peer that was discovered recently
-	for _, info := range peersTable {
-		if !info.connected && !info.dropped && mclock.Now() < info.discoveredTime+mclock.AbsTime(foundTimeout) {
-			log.Debug("adding peer from pool", "ID", info.node.ID, "topic", topic)
-			if p.cache != nil {
-				// this conversions are getting funny
-				if err := p.cache.AddPeer(discv5.NewNode(
-					discv5.NodeID(info.node.ID),
-					info.node.IP, info.node.UDP, info.node.TCP), topic); err != nil {
-					log.Error("failed to persist a peer", "error", err)
-				}
-			}
-			server.AddPeer(info.node)
-			connected = true
-			info.connected = true
-			break
-		}
-	}
-	peersTable[discv5.NodeID(nodeID)].dropped = true
-	peersTable[discv5.NodeID(nodeID)].connected = false
-	return connected
 }
 
 // Stop closes pool quit channel and all channels that are watched by search queries
