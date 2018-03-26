@@ -1,4 +1,4 @@
-package node
+package peers
 
 import (
 	"fmt"
@@ -12,8 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
-	"github.com/status-im/status-go/geth/params"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/status-im/status-go/geth/params"
 )
 
 type PeerPoolSimulationSuite struct {
@@ -83,7 +84,7 @@ func (s *PeerPoolSimulationSuite) TestSingleTopicDiscovery() {
 	}
 	peerPool := NewPeerPool(config, 100*time.Millisecond, 100*time.Millisecond, nil)
 	for _, p := range s.peers[:2] {
-		register := NewResigter(topic)
+		register := NewRegister(topic)
 		s.Require().NoError(register.Start(p))
 		defer register.Stop()
 	}
@@ -92,7 +93,7 @@ func (s *PeerPoolSimulationSuite) TestSingleTopicDiscovery() {
 	events := make(chan *p2p.PeerEvent, 20)
 	subscription := s.peers[2].SubscribeEvents(events)
 	defer subscription.Unsubscribe()
-	peerPool.Start(s.peers[2])
+	s.NoError(peerPool.Start(s.peers[2]))
 	defer peerPool.Stop()
 	connected := 0
 	for {
@@ -179,12 +180,12 @@ func (s *PeerPoolIsolatedSuite) TestSyncSwitches() {
 	s.True(info.connected)
 	events <- &p2p.PeerEvent{
 		Type: p2p.PeerEventTypeDrop,
-		Peer: info.node.ID,
+		Peer: discover.NodeID(info.node.ID),
 	}
 	s.AssertConsumed(period, s.peerPool.fastSync, time.Second)
 }
 
-func (s *PeerPoolIsolatedSuite) TestNewPeerSelectedOnDisconnect() {
+func (s *PeerPoolIsolatedSuite) TestNewPeerSelectedOnDrop() {
 	peer1 := discv5.NewNode(discv5.NodeID{1}, s.peer.Self().IP, 32311, 32311)
 	peer2 := discv5.NewNode(discv5.NodeID{2}, s.peer.Self().IP, 32311, 32311)
 	peer3 := discv5.NewNode(discv5.NodeID{3}, s.peer.Self().IP, 32311, 32311)
@@ -193,8 +194,6 @@ func (s *PeerPoolIsolatedSuite) TestNewPeerSelectedOnDisconnect() {
 	s.False(s.peerPool.processFoundNode(s.peer, 2, s.topic, peer3))
 	s.False(s.peerPool.peers[s.topic][peer3.ID].connected)
 
-	s.True(s.peerPool.processDisconnectedNode(s.peer, s.topic, discover.NodeID(peer1.ID)))
-	s.True(s.peerPool.peers[s.topic][peer1.ID].dropped)
+	s.True(s.peerPool.processDroppedNode(s.peer, s.topic, discover.NodeID(peer1.ID)))
 	s.False(s.peerPool.processFoundNode(s.peer, 2, s.topic, peer1))
-	s.False(s.peerPool.peers[s.topic][peer1.ID].dropped)
 }

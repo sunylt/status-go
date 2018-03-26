@@ -74,8 +74,9 @@ var (
 
 	syncAndExit = flag.Int("sync-and-exit", -1, "Timeout in minutes for blockchain sync and exit, zero means no timeout unless sync is finished")
 
-	searchTopics   topicLimitsFlag
-	registerTopics topicsFlag
+	// Topics that will be search and registered by discovery v5.
+	searchTopics   = topicLimitsFlag{}
+	registerTopics = topicsFlag{}
 )
 
 // All general log messages in this package should be routed through this logger.
@@ -108,17 +109,11 @@ func enhanceLogger(logger *log.Logger, config *params.NodeConfig) error {
 }
 
 func main() {
-	searchTopics = topicLimitsFlag{}
 	flag.Var(&searchTopics, "stopic", "Topic that will be searched in discovery v5, e.g (mailserver=1,1)")
 	flag.Var(&registerTopics, "rtopic", "Topic that will be registered using discovery v5.")
 
 	flag.Usage = printUsage
 	flag.Parse()
-
-	handler := log.StreamHandler(os.Stdout, log.TerminalFormat(true))
-	level, _ := log.LvlFromString(strings.ToLower(*logLevel))
-	filteredHandler := log.LvlFilterHandler(level, handler)
-	log.Root().SetHandler(filteredHandler)
 
 	config, err := makeNodeConfig()
 	if err != nil {

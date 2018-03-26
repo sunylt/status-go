@@ -1,4 +1,4 @@
-package node
+package peers
 
 import (
 	"sync"
@@ -17,7 +17,7 @@ type Register struct {
 }
 
 // NewRegister creates instance of topic register
-func NewResigter(topics ...discv5.Topic) *Register {
+func NewRegister(topics ...discv5.Topic) *Register {
 	return &Register{topics: topics}
 }
 
@@ -50,5 +50,4 @@ func (r *Register) Stop() {
 	}
 	close(r.quit)
 	r.wg.Wait()
-	return
 }

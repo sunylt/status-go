@@ -1,24 +1,4 @@
-/*
-Peer pool works in a following way:
-1. For each configured topic it will create discovery v5 search query.
-Search query will periodically do regular kademlia lookups with bucket size 16
-and send a topic query to every node that is returned from kademlia lookup.
-Eventually nodes with required topics will be found and we will pass them to p2p server.
-2. Additional loop will be created for every topic that will synchronize
-found nodes with p2p server. This loop will follow next logic:
-- if node is found and max limit of peers is not reached we will add this node to
-  server and assume that it is connected
-- if max limit is reached we will add peer to our peer topic table for later use
-- if min limit is reached - frequency will be changed to a keepalive timer, this is required cause we need
-  frequent lookups only when we are looking for a peer
-3. when peer is disconnected we do 3 things:
-  - select new peer from peers table that was updated no longer than foundTimeout and not
-    in the connected (90s)
-  - set a peer as not connected
-  - check how many peers do we have and in case if we went below min limit - set period to fastSync
-*/
-
-package node
+package peers
 
 import (
 	"errors"
@@ -31,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
-	"github.com/status-im/status-go/geth/db"
 	"github.com/status-im/status-go/geth/params"
 )
 
@@ -41,13 +20,15 @@ var (
 )
 
 const (
-	foundTimeout    = 60 * time.Minute
-	defaultFastSync = 500 * time.Millisecond
-	defaultSlowSync = 30 * time.Minute
+	expirationPeriod = 60 * time.Minute
+	// DefaultFastSync is a recommended value for aggressive peers search.
+	DefaultFastSync = 500 * time.Millisecond
+	// DefaultSlowSync is a recommended value for slow (background) peers search.
+	DefaultSlowSync = 30 * time.Minute
 )
 
 // NewPeerPool creates instance of PeerPool
-func NewPeerPool(config map[discv5.Topic]params.Limits, fastSync, slowSync time.Duration, cache *db.PeersDatabase) *PeerPool {
+func NewPeerPool(config map[discv5.Topic]params.Limits, fastSync, slowSync time.Duration, cache *Cache) *PeerPool {
 	return &PeerPool{
 		config:   config,
 		fastSync: fastSync,
@@ -59,7 +40,7 @@ func NewPeerPool(config map[discv5.Topic]params.Limits, fastSync, slowSync time.
 type peerInfo struct {
 	// discoveredTime last time when node was found by v5
 	discoveredTime mclock.AbsTime
-	// connected is true if node is added as a statis peer
+	// connected is true if node is added as a static peer
 	connected bool
 
 	node *discv5.Node
@@ -71,7 +52,7 @@ type PeerPool struct {
 	config   map[discv5.Topic]params.Limits
 	fastSync time.Duration
 	slowSync time.Duration
-	cache    *db.PeersDatabase
+	cache    *Cache
 
 	mu sync.RWMutex
 	// TODO split this into separate maps to avoid unnecessary locking
@@ -137,7 +118,7 @@ func (p *PeerPool) Start(server *p2p.Server) error {
 	return nil
 }
 
-func (p *PeerPool) handlePeersFromTopic(server *p2p.Server, topic discv5.Topic, period chan time.Duration, found chan *discv5.Node, lookup chan bool, events chan *p2p.PeerEvent) {
+func (p *PeerPool) handlePeersFromTopic(server *p2p.Server, topic discv5.Topic, period chan<- time.Duration, found <-chan *discv5.Node, lookup <-chan bool, events <-chan *p2p.PeerEvent) {
 	limits := p.config[topic]
 	fast := true
 	period <- p.fastSync
@@ -162,12 +143,12 @@ func (p *PeerPool) handlePeersFromTopic(server *p2p.Server, topic discv5.Topic, 
 				fast = false
 			}
 		case <-lookup:
-			// just drain this channel for now, it can be used to intellegently
+			// just drain this channel for now, it can be used to intelligently
 			// limit number of kademlia lookups
 		case event := <-events:
 			if event.Type == p2p.PeerEventTypeDrop {
 				log.Debug("node dropped", "ID", event.Peer, "topic", topic)
-				if !p.processDisconnectedNode(server, topic, event.Peer) {
+				if !p.processDroppedNode(server, topic, event.Peer) {
 					connected--
 				}
 				// switch period only once
@@ -176,8 +157,6 @@ func (p *PeerPool) handlePeersFromTopic(server *p2p.Server, topic discv5.Topic, 
 					period <- p.fastSync
 					fast = true
 				}
-			} else if event.Type == p2p.PeerEventTypeAdd {
-				// TODO take into account inbound connections
 			}
 		}
 	}
@@ -220,11 +199,11 @@ func (p *PeerPool) processFoundNode(server *p2p.Server, currentlyConnected int, 
 	return connected
 }
 
-// processDisconnectedNode is called when node was disconnected by p2p server
+// processDroppedNode is called when node was dropped by p2p server
 // - removes a peer, cause p2p server now relies on peer pool to maintain required connections number
 // - if there is a valid peer in peer table add it to a p2p server
 //   peer is valid if it wasn't dropped recently, it is not stale (90s) and not currently connected
-func (p *PeerPool) processDisconnectedNode(server *p2p.Server, topic discv5.Topic, nodeID discover.NodeID) bool {
+func (p *PeerPool) processDroppedNode(server *p2p.Server, topic discv5.Topic, nodeID discover.NodeID) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	peersTable := p.peers[topic]
@@ -235,7 +214,7 @@ func (p *PeerPool) processDisconnectedNode(server *p2p.Server, topic discv5.Topi
 	p.removePeer(server, nodeID, topic)
 	// TODO use a heap queue and always get a peer that was discovered recently
 	for _, info := range peersTable {
-		if !info.connected && mclock.Now() < info.discoveredTime+mclock.AbsTime(foundTimeout) {
+		if !info.connected && mclock.Now() < info.discoveredTime+mclock.AbsTime(expirationPeriod) {
 			p.addPeer(server, info, topic)
 			return true
 		}
@@ -259,14 +238,14 @@ func (p *PeerPool) addPeer(server *p2p.Server, info *peerInfo, topic discv5.Topi
 }
 
 func (p *PeerPool) removePeer(server *p2p.Server, nodeID discover.NodeID, topic discv5.Topic) {
-	info := p.peers[topic][nodeID]
+	info := p.peers[topic][discv5.NodeID(nodeID)]
 	server.RemovePeer(discover.NewNode(
 		discover.NodeID(info.node.ID),
 		info.node.IP,
 		info.node.UDP,
 		info.node.TCP,
 	))
-	delete(p.peers[topic].peersTable, discv5.NodeID(nodeID))
+	delete(p.peers[topic], discv5.NodeID(nodeID))
 	if p.cache != nil {
 		if err := p.cache.RemovePeer(discv5.NodeID(nodeID), topic); err != nil {
 			log.Error("failed to remove peer from cache", "error", err)

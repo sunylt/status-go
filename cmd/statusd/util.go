@@ -16,7 +16,7 @@ func (f *topicsFlag) String() string {
 }
 
 func (f *topicsFlag) Set(value string) error {
-	*f = append(*f, discv5.Topic(value))
+	*f = append(*f, discv5.Topic(strings.TrimSpace(value)))
 	return nil
 }
 
@@ -27,7 +27,7 @@ func (f *topicLimitsFlag) String() string {
 }
 
 func (f *topicLimitsFlag) Set(value string) error {
-	parts := strings.Split(value, "=")
+	parts := strings.Split(strings.TrimSpace(value), "=")
 	if len(parts) != 2 {
 		return errors.New("topic must be separated by '=' from limits, e.g. 'topic1=1,1'")
 	}

@@ -6,7 +6,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
-// CreateDatabase returns status wrapper to leveldb.
+// CreateDatabase returns status pointer to leveldb.DB.
 func CreateDatabase(path string) (*leveldb.DB, error) {
 	opts := &opt.Options{OpenFilesCacheCapacity: 5}
 	db, err := leveldb.OpenFile(path, opts)

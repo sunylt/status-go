@@ -21,6 +21,7 @@ import (
 	"github.com/status-im/status-go/geth/db"
 	"github.com/status-im/status-go/geth/mailservice"
 	"github.com/status-im/status-go/geth/params"
+	"github.com/status-im/status-go/geth/peers"
 	"github.com/status-im/status-go/geth/rpc"
 )
 
@@ -49,8 +50,8 @@ type Manager struct {
 	mu       sync.RWMutex
 	config   *params.NodeConfig // Status node configuration
 	node     *node.Node         // reference to Geth P2P stack/node
-	register *Register
-	peerPool *PeerPool
+	register *peers.Register
+	peerPool *peers.PeerPool
 	db       *leveldb.DB
 
 	whisperService *whisper.Whisper   // reference to Whisper service
@@ -112,8 +113,11 @@ func (m *Manager) startNode(config *params.NodeConfig) error {
 			return err
 		}
 		m.db = statusDB
-		m.register = NewResigter(m.config.RegisterTopics...)
-		m.peerPool = NewPeerPool(m.config.RequireTopics, defaultFastSync, defaultSlowSync, db.NewPeersDatabase(m.db))
+		m.register = peers.NewRegister(m.config.RegisterTopics...)
+		m.peerPool = peers.NewPeerPool(m.config.RequireTopics,
+			peers.DefaultFastSync,
+			peers.DefaultSlowSync,
+			peers.NewCache(m.db))
 		if err := m.register.Start(ethNode.Server()); err != nil {
 			return err
 		}
@@ -137,7 +141,9 @@ func (m *Manager) stopNode() error {
 		return err
 	}
 	if m.node.Server().DiscV5 != nil {
-		m.db.Close()
+		if err := m.db.Close(); err != nil {
+			m.log.Error("error closing status db", "error", err)
+		}
 		m.register.Stop()
 		m.peerPool.Stop()
 	}

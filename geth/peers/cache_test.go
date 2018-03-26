@@ -1,4 +1,4 @@
-package db
+package peers
 
 import (
 	"io/ioutil"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/p2p/discv5"
+	"github.com/status-im/status-go/geth/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,11 +18,13 @@ func TestPeersRange(t *testing.T) {
 	defer func() {
 		require.NoError(t, os.RemoveAll(path))
 	}()
-	rootDB, err := CreateDatabase(path)
+	rootDB, err := db.CreateDatabase(path)
 	require.NoError(t, err)
-	defer rootDB.Close()
+	defer func() {
+		assert.NoError(t, rootDB.Close())
+	}()
 
-	peersDB := PeersDatabase{db: rootDB}
+	peersDB := Cache{db: rootDB}
 	topic := discv5.Topic("test")
 	peers := [3]*discv5.Node{
 		discv5.NewNode(discv5.NodeID{3}, net.IPv4(100, 100, 0, 3), 32311, 32311),
@@ -29,7 +32,7 @@ func TestPeersRange(t *testing.T) {
 		discv5.NewNode(discv5.NodeID{2}, net.IPv4(100, 100, 0, 2), 32311, 32311),
 	}
 	for _, peer := range peers {
-		peersDB.AddPeer(peer, topic)
+		assert.NoError(t, peersDB.AddPeer(peer, topic))
 	}
 	nodes := peersDB.GetPeersRange(topic, 3)
 	require.Len(t, nodes, 3)
@@ -40,6 +43,6 @@ func TestPeersRange(t *testing.T) {
 	assert.Equal(t, peers[0].String(), nodes[1].String())
 	assert.Equal(t, peers[1].String(), nodes[2].String())
 
-	peersDB.RemovePeer(peers[1].ID, topic)
+	assert.NoError(t, peersDB.RemovePeer(peers[1].ID, topic))
 	require.Len(t, peersDB.GetPeersRange(topic, 3), 2)
 }

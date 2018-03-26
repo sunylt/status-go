@@ -1,4 +1,4 @@
-package db
+package peers
 
 import (
 	"github.com/ethereum/go-ethereum/log"
@@ -7,13 +7,13 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
-// NewPeersDatabase returns instance of PeersDatabase
-func NewPeersDatabase(db *leveldb.DB) *PeersDatabase {
-	return &PeersDatabase{db: db}
+// NewCache returns instance of PeersDatabase
+func NewCache(db *leveldb.DB) *Cache {
+	return &Cache{db: db}
 }
 
-// PeersDatabase maintains list of peers that were discovered.
-type PeersDatabase struct {
+// Cache maintains list of peers that were discovered.
+type Cache struct {
 	db *leveldb.DB
 }
 
@@ -27,7 +27,7 @@ func makePeerKey(peerID discv5.NodeID, topic discv5.Topic) []byte {
 }
 
 // AddPeer stores peer with a following key: <topic><peer ID>
-func (d *PeersDatabase) AddPeer(peer *discv5.Node, topic discv5.Topic) error {
+func (d *Cache) AddPeer(peer *discv5.Node, topic discv5.Topic) error {
 	data, err := peer.MarshalText()
 	if err != nil {
 		return err
@@ -36,12 +36,12 @@ func (d *PeersDatabase) AddPeer(peer *discv5.Node, topic discv5.Topic) error {
 }
 
 // RemovePeer deletes a peer from database.
-func (d *PeersDatabase) RemovePeer(peerID discv5.NodeID, topic discv5.Topic) error {
+func (d *Cache) RemovePeer(peerID discv5.NodeID, topic discv5.Topic) error {
 	return d.db.Delete(makePeerKey(peerID, topic), nil)
 }
 
 // GetPeersRange returns peers for a given topic with a limit.
-func (d *PeersDatabase) GetPeersRange(topic discv5.Topic, limit int) (nodes []*discv5.Node) {
+func (d *Cache) GetPeersRange(topic discv5.Topic, limit int) (nodes []*discv5.Node) {
 	topicLth := len([]byte(topic))
 	key := make([]byte, topicLth)
 	copy(key[:], []byte(topic))
