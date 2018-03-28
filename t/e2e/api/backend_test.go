@@ -9,10 +9,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/status-im/status-go/geth/account"
-	"github.com/status-im/status-go/geth/common"
 	"github.com/status-im/status-go/geth/jail"
 	"github.com/status-im/status-go/geth/node"
 	"github.com/status-im/status-go/geth/params"
+	txutils "github.com/status-im/status-go/geth/transactions/utils"
 	e2e "github.com/status-im/status-go/t/e2e"
 	. "github.com/status-im/status-go/t/utils"
 	"github.com/stretchr/testify/suite"
@@ -148,13 +148,13 @@ func (s *APIBackendTestSuite) TestRaceConditions() {
 		},
 		func(config *params.NodeConfig) {
 			log.Info("CompleteTransactions()")
-			ids := []common.QueuedTxID{"id1", "id2"}
+			ids := []txutils.QueuedTxID{"id1", "id2"}
 			s.T().Logf("CompleteTransactions(), result: %v", s.Backend.CompleteTransactions(ids, "password"))
 			progress <- struct{}{}
 		},
 		func(config *params.NodeConfig) {
 			log.Info("DiscardTransactions()")
-			ids := []common.QueuedTxID{"id1", "id2"}
+			ids := []txutils.QueuedTxID{"id1", "id2"}
 			s.T().Logf("DiscardTransactions(), result: %v", s.Backend.DiscardTransactions(ids))
 			progress <- struct{}{}
 		},

@@ -8,11 +8,11 @@ import (
 	gethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/status-im/status-go/geth/account"
-	"github.com/status-im/status-go/geth/common"
 	"github.com/status-im/status-go/geth/jail"
 	"github.com/status-im/status-go/geth/node"
 	"github.com/status-im/status-go/geth/params"
 	"github.com/status-im/status-go/geth/transactions"
+	txutils "github.com/status-im/status-go/geth/transactions/utils"
 )
 
 // StatusAPI provides API to access Status related functionality.
@@ -147,27 +147,27 @@ func (api *StatusAPI) Logout() error {
 }
 
 // SendTransaction creates a new transaction and waits until it's complete.
-func (api *StatusAPI) SendTransaction(ctx context.Context, args common.SendTxArgs) (gethcommon.Hash, error) {
+func (api *StatusAPI) SendTransaction(ctx context.Context, args txutils.SendTxArgs) (gethcommon.Hash, error) {
 	return api.b.SendTransaction(ctx, args)
 }
 
 // CompleteTransaction instructs backend to complete sending of a given transaction
-func (api *StatusAPI) CompleteTransaction(id common.QueuedTxID, password string) (gethcommon.Hash, error) {
+func (api *StatusAPI) CompleteTransaction(id txutils.QueuedTxID, password string) (gethcommon.Hash, error) {
 	return api.b.CompleteTransaction(id, password)
 }
 
 // CompleteTransactions instructs backend to complete sending of multiple transactions
-func (api *StatusAPI) CompleteTransactions(ids []common.QueuedTxID, password string) map[common.QueuedTxID]common.TransactionResult {
+func (api *StatusAPI) CompleteTransactions(ids []txutils.QueuedTxID, password string) map[txutils.QueuedTxID]txutils.TransactionResult {
 	return api.b.CompleteTransactions(ids, password)
 }
 
 // DiscardTransaction discards a given transaction from transaction queue
-func (api *StatusAPI) DiscardTransaction(id common.QueuedTxID) error {
+func (api *StatusAPI) DiscardTransaction(id txutils.QueuedTxID) error {
 	return api.b.txQueueManager.DiscardTransaction(id)
 }
 
 // DiscardTransactions discards given multiple transactions from transaction queue
-func (api *StatusAPI) DiscardTransactions(ids []common.QueuedTxID) map[common.QueuedTxID]common.RawDiscardTransactionResult {
+func (api *StatusAPI) DiscardTransactions(ids []txutils.QueuedTxID) map[txutils.QueuedTxID]txutils.RawDiscardTransactionResult {
 	return api.b.txQueueManager.DiscardTransactions(ids)
 }
 

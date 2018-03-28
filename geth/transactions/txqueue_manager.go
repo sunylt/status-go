@@ -12,9 +12,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/status-im/status-go/geth/account"
-	"github.com/status-im/status-go/geth/common"
 	"github.com/status-im/status-go/geth/rpc"
 	"github.com/status-im/status-go/geth/transactions/queue"
+	txutils "github.com/status-im/status-go/geth/transactions/utils"
 )
 
 const (
@@ -88,7 +88,7 @@ func (m *Manager) TransactionQueue() *queue.TxQueue {
 }
 
 // QueueTransaction puts a transaction into the queue.
-func (m *Manager) QueueTransaction(tx *common.QueuedTx) error {
+func (m *Manager) QueueTransaction(tx *txutils.QueuedTx) error {
 	to := "<nil>"
 	if tx.Args.To != nil {
 		to = tx.Args.To.Hex()
@@ -103,7 +103,7 @@ func (m *Manager) QueueTransaction(tx *common.QueuedTx) error {
 	return nil
 }
 
-func (m *Manager) txDone(tx *common.QueuedTx, hash gethcommon.Hash, err error) {
+func (m *Manager) txDone(tx *txutils.QueuedTx, hash gethcommon.Hash, err error) {
 	if err := m.txQueue.Done(tx.ID, hash, err); err == queue.ErrQueuedTxIDNotFound {
 		m.log.Warn("transaction is already removed from a queue", "ID", tx.ID)
 		return
@@ -115,7 +115,7 @@ func (m *Manager) txDone(tx *common.QueuedTx, hash gethcommon.Hash, err error) {
 
 // WaitForTransaction adds a transaction to the queue and blocks
 // until it's completed, discarded or times out.
-func (m *Manager) WaitForTransaction(tx *common.QueuedTx) common.TransactionResult {
+func (m *Manager) WaitForTransaction(tx *txutils.QueuedTx) txutils.TransactionResult {
 	m.log.Info("wait for transaction", "id", tx.ID)
 	// now wait up until transaction is:
 	// - completed (via CompleteQueuedTransaction),
@@ -132,7 +132,7 @@ func (m *Manager) WaitForTransaction(tx *common.QueuedTx) common.TransactionResu
 }
 
 // NotifyErrored sends a notification for the given transaction
-func (m *Manager) NotifyErrored(id common.QueuedTxID, inputError error) error {
+func (m *Manager) NotifyErrored(id txutils.QueuedTxID, inputError error) error {
 	tx, err := m.txQueue.Get(id)
 	if err != nil {
 		m.log.Warn("error getting a queued transaction", "err", err)
@@ -147,7 +147,7 @@ func (m *Manager) NotifyErrored(id common.QueuedTxID, inputError error) error {
 }
 
 // CompleteTransaction instructs backend to complete sending of a given transaction.
-func (m *Manager) CompleteTransaction(id common.QueuedTxID, account *account.SelectedExtKey) (hash gethcommon.Hash, err error) {
+func (m *Manager) CompleteTransaction(id txutils.QueuedTxID, account *account.SelectedExtKey) (hash gethcommon.Hash, err error) {
 	m.log.Info("complete transaction", "id", id)
 	tx, err := m.txQueue.Get(id)
 	if err != nil {
@@ -170,7 +170,7 @@ func (m *Manager) CompleteTransaction(id common.QueuedTxID, account *account.Sel
 }
 
 // make sure that only account which created the tx can complete it
-func (m *Manager) validateAccount(tx *common.QueuedTx, selectedAccount *account.SelectedExtKey) error {
+func (m *Manager) validateAccount(tx *txutils.QueuedTx, selectedAccount *account.SelectedExtKey) error {
 	if selectedAccount == nil {
 		return account.ErrNoAccountSelected
 	}
@@ -184,7 +184,7 @@ func (m *Manager) validateAccount(tx *common.QueuedTx, selectedAccount *account.
 	return nil
 }
 
-func (m *Manager) completeTransaction(selectedAccount *account.SelectedExtKey, queuedTx *common.QueuedTx) (hash gethcommon.Hash, err error) {
+func (m *Manager) completeTransaction(selectedAccount *account.SelectedExtKey, queuedTx *txutils.QueuedTx) (hash gethcommon.Hash, err error) {
 	m.log.Info("complete transaction", "id", queuedTx.ID)
 	m.addrLock.LockAddr(queuedTx.Args.From)
 	var localNonce uint64
@@ -274,7 +274,7 @@ func (m *Manager) completeTransaction(selectedAccount *account.SelectedExtKey, q
 }
 
 // DiscardTransaction discards a given transaction from transaction queue
-func (m *Manager) DiscardTransaction(id common.QueuedTxID) error {
+func (m *Manager) DiscardTransaction(id txutils.QueuedTxID) error {
 	tx, err := m.txQueue.Get(id)
 	if err != nil {
 		return err
@@ -287,13 +287,13 @@ func (m *Manager) DiscardTransaction(id common.QueuedTxID) error {
 }
 
 // DiscardTransactions discards given multiple transactions from transaction queue
-func (m *Manager) DiscardTransactions(ids []common.QueuedTxID) map[common.QueuedTxID]common.RawDiscardTransactionResult {
-	results := make(map[common.QueuedTxID]common.RawDiscardTransactionResult)
+func (m *Manager) DiscardTransactions(ids []txutils.QueuedTxID) map[txutils.QueuedTxID]txutils.RawDiscardTransactionResult {
+	results := make(map[txutils.QueuedTxID]txutils.RawDiscardTransactionResult)
 
 	for _, txID := range ids {
 		err := m.DiscardTransaction(txID)
 		if err != nil {
-			results[txID] = common.RawDiscardTransactionResult{
+			results[txID] = txutils.RawDiscardTransactionResult{
 				Error: err,
 			}
 		}
@@ -306,10 +306,10 @@ func (m *Manager) DiscardTransactions(ids []common.QueuedTxID) map[common.Queued
 // It accepts one param which is a slice with a map of transaction params.
 func (m *Manager) SendTransactionRPCHandler(ctx context.Context, args ...interface{}) (interface{}, error) {
 	m.log.Info("SendTransactionRPCHandler called")
-	// TODO(adam): it's a hack to parse arguments as common.RPCCall can do that.
+	// TODO(adam): it's a hack to parse arguments as rpc.Call can do that.
 	// We should refactor parsing these params to a separate struct.
-	rpcCall := common.RPCCall{Params: args}
-	tx := common.CreateTransaction(ctx, rpcCall.ToSendTxArgs())
+	rpcCall := rpc.Call{Params: args}
+	tx := txutils.CreateTransaction(ctx, rpcCall.ToSendTxArgs())
 	if err := m.QueueTransaction(tx); err != nil {
 		return nil, err
 	}

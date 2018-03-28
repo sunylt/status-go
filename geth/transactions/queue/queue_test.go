@@ -7,8 +7,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	gethcommon "github.com/ethereum/go-ethereum/common"
+	txutils "github.com/status-im/status-go/geth/transactions/utils"
 
-	"github.com/status-im/status-go/geth/common"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -31,7 +31,7 @@ func (s *QueueTestSuite) TearDownTest() {
 }
 
 func (s *QueueTestSuite) TestLockInprogressTransaction() {
-	tx := common.CreateTransaction(context.Background(), common.SendTxArgs{})
+	tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{})
 	s.NoError(s.queue.Enqueue(tx))
 	enquedTx, err := s.queue.Get(tx.ID)
 	s.NoError(err)
@@ -43,7 +43,7 @@ func (s *QueueTestSuite) TestLockInprogressTransaction() {
 }
 
 func (s *QueueTestSuite) TestGetTransaction() {
-	tx := common.CreateTransaction(context.Background(), common.SendTxArgs{})
+	tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{})
 	s.NoError(s.queue.Enqueue(tx))
 	for i := 2; i > 0; i-- {
 		enquedTx, err := s.queue.Get(tx.ID)
@@ -53,16 +53,16 @@ func (s *QueueTestSuite) TestGetTransaction() {
 }
 
 func (s *QueueTestSuite) TestAlreadyEnqueued() {
-	tx := common.CreateTransaction(context.Background(), common.SendTxArgs{})
+	tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{})
 	s.NoError(s.queue.Enqueue(tx))
 	s.Equal(ErrQueuedTxExist, s.queue.Enqueue(tx))
 	// try to enqueue another tx to double check locking
-	tx = common.CreateTransaction(context.Background(), common.SendTxArgs{})
+	tx = txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{})
 	s.NoError(s.queue.Enqueue(tx))
 }
 
-func (s *QueueTestSuite) testDone(hash gethcommon.Hash, err error) *common.QueuedTx {
-	tx := common.CreateTransaction(context.Background(), common.SendTxArgs{})
+func (s *QueueTestSuite) testDone(hash gethcommon.Hash, err error) *txutils.QueuedTx {
+	tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{})
 	s.NoError(s.queue.Enqueue(tx))
 	s.NoError(s.queue.Done(tx.ID, hash, err))
 	return tx
@@ -116,16 +116,16 @@ func (s QueueTestSuite) TestMultipleDone() {
 }
 
 func (s *QueueTestSuite) TestEviction() {
-	var first *common.QueuedTx
+	var first *txutils.QueuedTx
 	for i := 0; i < DefaultTxQueueCap; i++ {
-		tx := common.CreateTransaction(context.Background(), common.SendTxArgs{})
+		tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{})
 		if first == nil {
 			first = tx
 		}
 		s.NoError(s.queue.Enqueue(tx))
 	}
 	s.Equal(DefaultTxQueueCap, s.queue.Count())
-	tx := common.CreateTransaction(context.Background(), common.SendTxArgs{})
+	tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{})
 	s.NoError(s.queue.Enqueue(tx))
 	s.Equal(DefaultTxQueueCap, s.queue.Count())
 	s.False(s.queue.Has(first.ID))

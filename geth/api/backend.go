@@ -10,13 +10,13 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/status-im/status-go/geth/account"
-	"github.com/status-im/status-go/geth/common"
 	"github.com/status-im/status-go/geth/jail"
 	"github.com/status-im/status-go/geth/node"
 	"github.com/status-im/status-go/geth/notifications/push/fcm"
 	"github.com/status-im/status-go/geth/params"
 	"github.com/status-im/status-go/geth/signal"
 	"github.com/status-im/status-go/geth/transactions"
+	txutils "github.com/status-im/status-go/geth/transactions/utils"
 )
 
 const (
@@ -193,11 +193,11 @@ func (b *StatusBackend) CallRPC(inputJSON string) string {
 }
 
 // SendTransaction creates a new transaction and waits until it's complete.
-func (b *StatusBackend) SendTransaction(ctx context.Context, args common.SendTxArgs) (hash gethcommon.Hash, err error) {
+func (b *StatusBackend) SendTransaction(ctx context.Context, args txutils.SendTxArgs) (hash gethcommon.Hash, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	tx := common.CreateTransaction(ctx, args)
+	tx := txutils.CreateTransaction(ctx, args)
 	if err = b.txQueueManager.QueueTransaction(tx); err != nil {
 		return hash, err
 	}
@@ -227,7 +227,7 @@ func (b *StatusBackend) getVerifiedAccount(password string) (*account.SelectedEx
 }
 
 // CompleteTransaction instructs backend to complete sending of a given transaction
-func (b *StatusBackend) CompleteTransaction(id common.QueuedTxID, password string) (hash gethcommon.Hash, err error) {
+func (b *StatusBackend) CompleteTransaction(id txutils.QueuedTxID, password string) (hash gethcommon.Hash, err error) {
 	selectedAccount, err := b.getVerifiedAccount(password)
 	if err != nil {
 		_ = b.txQueueManager.NotifyErrored(id, err)
@@ -238,11 +238,11 @@ func (b *StatusBackend) CompleteTransaction(id common.QueuedTxID, password strin
 }
 
 // CompleteTransactions instructs backend to complete sending of multiple transactions
-func (b *StatusBackend) CompleteTransactions(ids []common.QueuedTxID, password string) map[common.QueuedTxID]common.TransactionResult {
-	results := make(map[common.QueuedTxID]common.TransactionResult)
+func (b *StatusBackend) CompleteTransactions(ids []txutils.QueuedTxID, password string) map[txutils.QueuedTxID]txutils.TransactionResult {
+	results := make(map[txutils.QueuedTxID]txutils.TransactionResult)
 	for _, txID := range ids {
 		txHash, txErr := b.CompleteTransaction(txID, password)
-		results[txID] = common.TransactionResult{
+		results[txID] = txutils.TransactionResult{
 			Hash:  txHash,
 			Error: txErr,
 		}
@@ -251,12 +251,12 @@ func (b *StatusBackend) CompleteTransactions(ids []common.QueuedTxID, password s
 }
 
 // DiscardTransaction discards a given transaction from transaction queue
-func (b *StatusBackend) DiscardTransaction(id common.QueuedTxID) error {
+func (b *StatusBackend) DiscardTransaction(id txutils.QueuedTxID) error {
 	return b.txQueueManager.DiscardTransaction(id)
 }
 
 // DiscardTransactions discards given multiple transactions from transaction queue
-func (b *StatusBackend) DiscardTransactions(ids []common.QueuedTxID) map[common.QueuedTxID]common.RawDiscardTransactionResult {
+func (b *StatusBackend) DiscardTransactions(ids []txutils.QueuedTxID) map[txutils.QueuedTxID]txutils.RawDiscardTransactionResult {
 	return b.txQueueManager.DiscardTransactions(ids)
 }
 

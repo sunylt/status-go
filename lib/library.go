@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/status-im/status-go/geth/common"
 	"github.com/status-im/status-go/geth/params"
+	txutils "github.com/status-im/status-go/geth/transactions/utils"
 	"github.com/status-im/status-go/profiling"
 	"gopkg.in/go-playground/validator.v9"
 )
@@ -197,7 +198,7 @@ func Logout() *C.char {
 //CompleteTransaction instructs backend to complete sending of a given transaction
 //export CompleteTransaction
 func CompleteTransaction(id, password *C.char) *C.char {
-	txHash, err := statusAPI.CompleteTransaction(common.QueuedTxID(C.GoString(id)), C.GoString(password))
+	txHash, err := statusAPI.CompleteTransaction(txutils.QueuedTxID(C.GoString(id)), C.GoString(password))
 
 	errString := ""
 	if err != nil {
@@ -205,7 +206,7 @@ func CompleteTransaction(id, password *C.char) *C.char {
 		errString = err.Error()
 	}
 
-	out := common.CompleteTransactionResult{
+	out := txutils.CompleteTransactionResult{
 		ID:    C.GoString(id),
 		Hash:  txHash.Hex(),
 		Error: errString,
@@ -222,23 +223,23 @@ func CompleteTransaction(id, password *C.char) *C.char {
 //CompleteTransactions instructs backend to complete sending of multiple transactions
 //export CompleteTransactions
 func CompleteTransactions(ids, password *C.char) *C.char {
-	out := common.CompleteTransactionsResult{}
-	out.Results = make(map[string]common.CompleteTransactionResult)
+	out := txutils.CompleteTransactionsResult{}
+	out.Results = make(map[string]txutils.CompleteTransactionResult)
 
 	parsedIDs, err := common.ParseJSONArray(C.GoString(ids))
 	if err != nil {
-		out.Results["none"] = common.CompleteTransactionResult{
+		out.Results["none"] = txutils.CompleteTransactionResult{
 			Error: err.Error(),
 		}
 	} else {
-		txIDs := make([]common.QueuedTxID, len(parsedIDs))
+		txIDs := make([]txutils.QueuedTxID, len(parsedIDs))
 		for i, id := range parsedIDs {
-			txIDs[i] = common.QueuedTxID(id)
+			txIDs[i] = txutils.QueuedTxID(id)
 		}
 
 		results := statusAPI.CompleteTransactions(txIDs, C.GoString(password))
 		for txID, result := range results {
-			txResult := common.CompleteTransactionResult{
+			txResult := txutils.CompleteTransactionResult{
 				ID:   string(txID),
 				Hash: result.Hash.Hex(),
 			}
@@ -261,7 +262,7 @@ func CompleteTransactions(ids, password *C.char) *C.char {
 //DiscardTransaction discards a given transaction from transaction queue
 //export DiscardTransaction
 func DiscardTransaction(id *C.char) *C.char {
-	err := statusAPI.DiscardTransaction(common.QueuedTxID(C.GoString(id)))
+	err := statusAPI.DiscardTransaction(txutils.QueuedTxID(C.GoString(id)))
 
 	errString := ""
 	if err != nil {
@@ -269,7 +270,7 @@ func DiscardTransaction(id *C.char) *C.char {
 		errString = err.Error()
 	}
 
-	out := common.DiscardTransactionResult{
+	out := txutils.DiscardTransactionResult{
 		ID:    C.GoString(id),
 		Error: errString,
 	}
@@ -285,23 +286,23 @@ func DiscardTransaction(id *C.char) *C.char {
 //DiscardTransactions discards given multiple transactions from transaction queue
 //export DiscardTransactions
 func DiscardTransactions(ids *C.char) *C.char {
-	out := common.DiscardTransactionsResult{}
-	out.Results = make(map[string]common.DiscardTransactionResult)
+	out := txutils.DiscardTransactionsResult{}
+	out.Results = make(map[string]txutils.DiscardTransactionResult)
 
 	parsedIDs, err := common.ParseJSONArray(C.GoString(ids))
 	if err != nil {
-		out.Results["none"] = common.DiscardTransactionResult{
+		out.Results["none"] = txutils.DiscardTransactionResult{
 			Error: err.Error(),
 		}
 	} else {
-		txIDs := make([]common.QueuedTxID, len(parsedIDs))
+		txIDs := make([]txutils.QueuedTxID, len(parsedIDs))
 		for i, id := range parsedIDs {
-			txIDs[i] = common.QueuedTxID(id)
+			txIDs[i] = txutils.QueuedTxID(id)
 		}
 
 		results := statusAPI.DiscardTransactions(txIDs)
 		for txID, result := range results {
-			txResult := common.DiscardTransactionResult{
+			txResult := txutils.DiscardTransactionResult{
 				ID: string(txID),
 			}
 			if result.Error != nil {

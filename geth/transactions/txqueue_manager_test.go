@@ -16,10 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	gethrpc "github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang/mock/gomock"
+	txutils "github.com/status-im/status-go/geth/transactions/utils"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/status-im/status-go/geth/account"
-	"github.com/status-im/status-go/geth/common"
 	"github.com/status-im/status-go/geth/params"
 	"github.com/status-im/status-go/geth/rpc"
 	"github.com/status-im/status-go/geth/transactions/fake"
@@ -75,7 +75,7 @@ var (
 	testNonce    = hexutil.Uint64(10)
 )
 
-func (s *TxQueueTestSuite) setupTransactionPoolAPI(tx *common.QueuedTx, returnNonce, resultNonce hexutil.Uint64, account *account.SelectedExtKey, txErr error) {
+func (s *TxQueueTestSuite) setupTransactionPoolAPI(tx *txutils.QueuedTx, returnNonce, resultNonce hexutil.Uint64, account *account.SelectedExtKey, txErr error) {
 	// Expect calls to gas functions only if there are no user defined values.
 	// And also set the expected gas and gas price for RLP encoding the expected tx.
 	var usedGas hexutil.Uint64
@@ -99,7 +99,7 @@ func (s *TxQueueTestSuite) setupTransactionPoolAPI(tx *common.QueuedTx, returnNo
 	s.txServiceMock.EXPECT().SendRawTransaction(gomock.Any(), data).Return(gethcommon.Hash{}, txErr)
 }
 
-func (s *TxQueueTestSuite) rlpEncodeTx(tx *common.QueuedTx, config *params.NodeConfig, account *account.SelectedExtKey, nonce *hexutil.Uint64, gas hexutil.Uint64, gasPrice *big.Int) hexutil.Bytes {
+func (s *TxQueueTestSuite) rlpEncodeTx(tx *txutils.QueuedTx, config *params.NodeConfig, account *account.SelectedExtKey, nonce *hexutil.Uint64, gas hexutil.Uint64, gasPrice *big.Int) hexutil.Bytes {
 	newTx := types.NewTransaction(
 		uint64(*nonce),
 		gethcommon.Address(*tx.Args.To),
@@ -152,7 +152,7 @@ func (s *TxQueueTestSuite) TestCompleteTransaction() {
 	for _, testCase := range testCases {
 		s.T().Run(testCase.name, func(t *testing.T) {
 			s.SetupTest()
-			tx := common.CreateTransaction(context.Background(), common.SendTxArgs{
+			tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{
 				From:     account.FromAddress(TestConfig.Account1.Address),
 				To:       account.ToAddress(TestConfig.Account2.Address),
 				Gas:      testCase.gas,
@@ -190,7 +190,7 @@ func (s *TxQueueTestSuite) TestCompleteTransactionMultipleTimes() {
 		AccountKey: &keystore.Key{PrivateKey: key},
 	}
 
-	tx := common.CreateTransaction(context.Background(), common.SendTxArgs{
+	tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{
 		From: account.FromAddress(TestConfig.Account1.Address),
 		To:   account.ToAddress(TestConfig.Account2.Address),
 	})
@@ -241,7 +241,7 @@ func (s *TxQueueTestSuite) TestAccountMismatch() {
 		Address: account.FromAddress(TestConfig.Account2.Address),
 	}
 
-	tx := common.CreateTransaction(context.Background(), common.SendTxArgs{
+	tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{
 		From: account.FromAddress(TestConfig.Account1.Address),
 		To:   account.ToAddress(TestConfig.Account2.Address),
 	})
@@ -257,7 +257,7 @@ func (s *TxQueueTestSuite) TestAccountMismatch() {
 }
 
 func (s *TxQueueTestSuite) TestDiscardTransaction() {
-	tx := common.CreateTransaction(context.Background(), common.SendTxArgs{
+	tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{
 		From: account.FromAddress(TestConfig.Account1.Address),
 		To:   account.ToAddress(TestConfig.Account2.Address),
 	})
@@ -277,11 +277,11 @@ func (s *TxQueueTestSuite) TestDiscardTransaction() {
 }
 
 func (s *TxQueueTestSuite) TestDiscardTransactions() {
-	tx := common.CreateTransaction(context.Background(), common.SendTxArgs{
+	tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{
 		From: account.FromAddress(TestConfig.Account1.Address),
 		To:   account.ToAddress(TestConfig.Account2.Address),
 	})
-	var ids []common.QueuedTxID
+	var ids []txutils.QueuedTxID
 	ids = append(ids, tx.ID)
 
 	s.NoError(s.manager.QueueTransaction(tx))
@@ -300,12 +300,12 @@ func (s *TxQueueTestSuite) TestDiscardTransactions() {
 }
 
 func (s *TxQueueTestSuite) TestDiscardTransactionsOnError() {
-	fakeTxID := common.QueuedTxID("7ab94f26-a866-4aba-1234-b4bbe98737a9")
-	tx := common.CreateTransaction(context.Background(), common.SendTxArgs{
+	fakeTxID := txutils.QueuedTxID("7ab94f26-a866-4aba-1234-b4bbe98737a9")
+	tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{
 		From: account.FromAddress(TestConfig.Account1.Address),
 		To:   account.ToAddress(TestConfig.Account2.Address),
 	})
-	var ids []common.QueuedTxID
+	var ids []txutils.QueuedTxID
 	ids = append(ids, fakeTxID)
 
 	s.NoError(s.manager.QueueTransaction(tx))
@@ -325,7 +325,7 @@ func (s *TxQueueTestSuite) TestDiscardTransactionsOnError() {
 }
 
 func (s *TxQueueTestSuite) TestCompletionTimedOut() {
-	tx := common.CreateTransaction(context.Background(), common.SendTxArgs{
+	tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{
 		From: account.FromAddress(TestConfig.Account1.Address),
 		To:   account.ToAddress(TestConfig.Account2.Address),
 	})
@@ -351,7 +351,7 @@ func (s *TxQueueTestSuite) TestLocalNonce() {
 	}
 	nonce := hexutil.Uint64(0)
 	for i := 0; i < txCount; i++ {
-		tx := common.CreateTransaction(context.Background(), common.SendTxArgs{
+		tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{
 			From: account.FromAddress(TestConfig.Account1.Address),
 			To:   account.ToAddress(TestConfig.Account2.Address),
 		})
@@ -367,7 +367,7 @@ func (s *TxQueueTestSuite) TestLocalNonce() {
 		s.Equal(uint64(i)+1, resultNonce.(uint64))
 	}
 	nonce = hexutil.Uint64(5)
-	tx := common.CreateTransaction(context.Background(), common.SendTxArgs{
+	tx := txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{
 		From: account.FromAddress(TestConfig.Account1.Address),
 		To:   account.ToAddress(TestConfig.Account2.Address),
 	})
@@ -383,7 +383,7 @@ func (s *TxQueueTestSuite) TestLocalNonce() {
 
 	testErr := errors.New("test")
 	s.txServiceMock.EXPECT().GetTransactionCount(gomock.Any(), selectedAccount.Address, gethrpc.PendingBlockNumber).Return(nil, testErr)
-	tx = common.CreateTransaction(context.Background(), common.SendTxArgs{
+	tx = txutils.CreateTransaction(context.Background(), txutils.SendTxArgs{
 		From: account.FromAddress(TestConfig.Account1.Address),
 		To:   account.ToAddress(TestConfig.Account2.Address),
 	})

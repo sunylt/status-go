@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/status-im/status-go/geth/api"
-	"github.com/status-im/status-go/geth/common"
 	"github.com/status-im/status-go/geth/params"
+	txutils "github.com/status-im/status-go/geth/transactions/utils"
 )
 
 // command contains the result of a parsed command line and
@@ -170,7 +170,7 @@ func (cs *commandSet) Logout() error {
 
 // CompleteTransaction instructs API to complete sending of a given transaction.
 func (cs *commandSet) CompleteTransaction(id, password string) (string, error) {
-	txHash, err := cs.statusAPI.CompleteTransaction(common.QueuedTxID(id), password)
+	txHash, err := cs.statusAPI.CompleteTransaction(txutils.QueuedTxID(id), password)
 	if err != nil {
 		return "", err
 	}
