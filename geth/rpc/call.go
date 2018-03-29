@@ -1,14 +1,15 @@
-package common
+package rpc
 
 import (
 	"errors"
 
 	gethcommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/status-im/status-go/geth/common"
 )
 
-// RPCCall represents a unit of a rpc request which is to be executed.
-type RPCCall struct {
+// Call represents a unit of a rpc request which is to be executed.
+type Call struct {
 	ID     int64
 	Method string
 	Params []interface{}
@@ -20,8 +21,8 @@ var (
 	ErrInvalidToAddress   = errors.New("Failed to parse To Address")
 )
 
-// ParseFromAddress returns the address associated with the RPCCall.
-func (r RPCCall) ParseFromAddress() (gethcommon.Address, error) {
+// ParseFromAddress returns the address associated with the Call.
+func (r Call) ParseFromAddress() (gethcommon.Address, error) {
 	params, ok := r.Params[0].(map[string]interface{})
 	if !ok {
 		return gethcommon.HexToAddress("0x"), ErrInvalidFromAddress
@@ -36,7 +37,7 @@ func (r RPCCall) ParseFromAddress() (gethcommon.Address, error) {
 }
 
 // ParseToAddress returns the gethcommon.Address associated with the call.
-func (r RPCCall) ParseToAddress() (gethcommon.Address, error) {
+func (r Call) ParseToAddress() (gethcommon.Address, error) {
 	params, ok := r.Params[0].(map[string]interface{})
 	if !ok {
 		return gethcommon.HexToAddress("0x"), ErrInvalidToAddress
@@ -50,7 +51,7 @@ func (r RPCCall) ParseToAddress() (gethcommon.Address, error) {
 	return gethcommon.HexToAddress(to), nil
 }
 
-func (r RPCCall) parseDataField(fieldName string) hexutil.Bytes {
+func (r Call) parseDataField(fieldName string) hexutil.Bytes {
 	params, ok := r.Params[0].(map[string]interface{})
 	if !ok {
 		return hexutil.Bytes("0x")
@@ -70,18 +71,18 @@ func (r RPCCall) parseDataField(fieldName string) hexutil.Bytes {
 }
 
 // ParseData returns the bytes associated with the call in the deprecated "data" field.
-func (r RPCCall) ParseData() hexutil.Bytes {
+func (r Call) ParseData() hexutil.Bytes {
 	return r.parseDataField("data")
 }
 
 // ParseInput returns the bytes associated with the call.
-func (r RPCCall) ParseInput() hexutil.Bytes {
+func (r Call) ParseInput() hexutil.Bytes {
 	return r.parseDataField("input")
 }
 
 // ParseValue returns the hex big associated with the call.
 // nolint: dupl
-func (r RPCCall) ParseValue() *hexutil.Big {
+func (r Call) ParseValue() *hexutil.Big {
 	params, ok := r.Params[0].(map[string]interface{})
 	if !ok {
 		return nil
@@ -103,7 +104,7 @@ func (r RPCCall) ParseValue() *hexutil.Big {
 
 // ParseGas returns the hex big associated with the call.
 // nolint: dupl
-func (r RPCCall) ParseGas() *hexutil.Uint64 {
+func (r Call) ParseGas() *hexutil.Uint64 {
 	params, ok := r.Params[0].(map[string]interface{})
 	if !ok {
 		return nil
@@ -125,7 +126,7 @@ func (r RPCCall) ParseGas() *hexutil.Uint64 {
 
 // ParseGasPrice returns the hex big associated with the call.
 // nolint: dupl
-func (r RPCCall) ParseGasPrice() *hexutil.Big {
+func (r Call) ParseGasPrice() *hexutil.Big {
 	params, ok := r.Params[0].(map[string]interface{})
 	if !ok {
 		return nil
@@ -144,8 +145,8 @@ func (r RPCCall) ParseGasPrice() *hexutil.Big {
 	return (*hexutil.Big)(parsedValue)
 }
 
-// ToSendTxArgs converts RPCCall to SendTxArgs.
-func (r RPCCall) ToSendTxArgs() SendTxArgs {
+// ToSendTxArgs converts Call to SendTxArgs.
+func (r Call) ToSendTxArgs() common.SendTxArgs {
 	var err error
 	var fromAddr, toAddr gethcommon.Address
 
@@ -161,7 +162,7 @@ func (r RPCCall) ToSendTxArgs() SendTxArgs {
 
 	input := r.ParseInput()
 	data := r.ParseData()
-	return SendTxArgs{
+	return common.SendTxArgs{
 		To:       &toAddr,
 		From:     fromAddr,
 		Value:    r.ParseValue(),
