@@ -47,7 +47,8 @@ func (r *Register) Stop() {
 	case <-r.quit:
 		return
 	default:
+		close(r.quit)
 	}
-	close(r.quit)
+	log.Debug("waiting for register queries to exit")
 	r.wg.Wait()
 }

@@ -56,7 +56,7 @@ func (s *PeerPoolSimulationSuite) SetupTest() {
 	s.Require().NoError(s.bootnode.Start())
 	bootnodeV5 := discv5.NewNode(s.bootnode.DiscV5.Self().ID, net.ParseIP("127.0.0.1"), uint16(port), uint16(port))
 
-	s.peers = make([]*p2p.Server, 3)
+	s.peers = make([]*p2p.Server, 2)
 	for i := range s.peers {
 		key, _ := crypto.GenerateKey()
 		peer := &p2p.Server{
@@ -83,17 +83,15 @@ func (s *PeerPoolSimulationSuite) TestSingleTopicDiscovery() {
 		topic: {expectedConnections, expectedConnections},
 	}
 	peerPool := NewPeerPool(config, 100*time.Millisecond, 100*time.Millisecond, nil)
-	for _, p := range s.peers[:2] {
-		register := NewRegister(topic)
-		s.Require().NoError(register.Start(p))
-		defer register.Stop()
-	}
+	register := NewRegister(topic)
+	s.Require().NoError(register.Start(s.peers[0]))
+	defer register.Stop()
 	// need to wait for topic to get registered, discv5 can query same node
 	// for a topic only once a minute
 	events := make(chan *p2p.PeerEvent, 20)
-	subscription := s.peers[2].SubscribeEvents(events)
+	subscription := s.peers[1].SubscribeEvents(events)
 	defer subscription.Unsubscribe()
-	s.NoError(peerPool.Start(s.peers[2]))
+	s.NoError(peerPool.Start(s.peers[1]))
 	defer peerPool.Stop()
 	connected := 0
 	for {
@@ -102,7 +100,7 @@ func (s *PeerPoolSimulationSuite) TestSingleTopicDiscovery() {
 			if ev.Type == p2p.PeerEventTypeAdd {
 				connected++
 			}
-		case <-time.After(20 * time.Second):
+		case <-time.After(5 * time.Second):
 			s.Require().FailNowf("waiting for peers timed out", strconv.Itoa(connected))
 		}
 		if connected == expectedConnections {
@@ -172,15 +170,19 @@ func (s *PeerPoolIsolatedSuite) TestSyncSwitches() {
 	lookup := make(chan bool, 1)
 	events := make(chan *p2p.PeerEvent, 1)
 	go s.peerPool.handlePeersFromTopic(s.peer, s.topic, period, found, lookup, events)
-	testPeer := discv5.NewNode(discv5.NodeID{1}, s.peer.Self().IP, 32311, 32311)
 	s.AssertConsumed(period, s.peerPool.fastSync, time.Second)
+	testPeer := discv5.NewNode(discv5.NodeID{1}, s.peer.Self().IP, 32311, 32311)
 	found <- testPeer
-	s.AssertConsumed(period, s.peerPool.slowSync, time.Second)
-	info := s.peerPool.peers[s.topic][testPeer.ID]
-	s.True(info.connected)
 	events <- &p2p.PeerEvent{
-		Type: p2p.PeerEventTypeDrop,
-		Peer: discover.NodeID(info.node.ID),
+		Type: p2p.PeerEventTypeAdd,
+		Peer: discover.NodeID(testPeer.ID),
+	}
+	s.AssertConsumed(period, s.peerPool.slowSync, time.Second)
+	s.True(s.peerPool.peers[s.topic][testPeer.ID].connected)
+	events <- &p2p.PeerEvent{
+		Type:  p2p.PeerEventTypeDrop,
+		Peer:  discover.NodeID(testPeer.ID),
+		Error: p2p.DiscProtocolError.Error(),
 	}
 	s.AssertConsumed(period, s.peerPool.fastSync, time.Second)
 }
@@ -189,11 +191,24 @@ func (s *PeerPoolIsolatedSuite) TestNewPeerSelectedOnDrop() {
 	peer1 := discv5.NewNode(discv5.NodeID{1}, s.peer.Self().IP, 32311, 32311)
 	peer2 := discv5.NewNode(discv5.NodeID{2}, s.peer.Self().IP, 32311, 32311)
 	peer3 := discv5.NewNode(discv5.NodeID{3}, s.peer.Self().IP, 32311, 32311)
-	s.True(s.peerPool.processFoundNode(s.peer, 0, s.topic, peer1))
-	s.True(s.peerPool.processFoundNode(s.peer, 1, s.topic, peer2))
-	s.False(s.peerPool.processFoundNode(s.peer, 2, s.topic, peer3))
+	// add 3 nodes and confirm connection for 1 and 2
+	s.peerPool.processFoundNode(s.peer, 0, s.topic, peer1)
+	s.peerPool.processFoundNode(s.peer, 1, s.topic, peer2)
+	s.peerPool.processFoundNode(s.peer, 2, s.topic, peer3)
+	s.True(s.peerPool.processAddedNode(s.peer, 0, discover.NodeID(peer1.ID), s.topic))
+	s.True(s.peerPool.processAddedNode(s.peer, 1, discover.NodeID(peer2.ID), s.topic))
+	s.False(s.peerPool.processAddedNode(s.peer, 2, discover.NodeID(peer3.ID), s.topic))
 	s.False(s.peerPool.peers[s.topic][peer3.ID].connected)
 
-	s.True(s.peerPool.processDroppedNode(s.peer, s.topic, discover.NodeID(peer1.ID)))
-	s.False(s.peerPool.processFoundNode(s.peer, 2, s.topic, peer1))
+	s.True(s.peerPool.processDroppedNode(s.peer, s.topic, discover.NodeID(peer1.ID), p2p.DiscNetworkError.Error()))
+}
+
+func (s *PeerPoolIsolatedSuite) TestRequestedDoesntRemove() {
+	peer1 := discv5.NewNode(discv5.NodeID{1}, s.peer.Self().IP, 32311, 32311)
+	s.peerPool.processFoundNode(s.peer, 0, s.topic, peer1)
+	s.True(s.peerPool.processAddedNode(s.peer, 0, discover.NodeID(peer1.ID), s.topic))
+	s.False(s.peerPool.processDroppedNode(s.peer, s.topic, discover.NodeID(peer1.ID), p2p.DiscRequested.Error()))
+	s.Contains(s.peerPool.peers[s.topic], peer1.ID)
+	s.True(s.peerPool.processDroppedNode(s.peer, s.topic, discover.NodeID(peer1.ID), p2p.DiscProtocolError.Error()))
+	s.NotContains(s.peerPool.peers[s.topic], peer1.ID)
 }

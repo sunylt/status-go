@@ -18,11 +18,11 @@ type Cache struct {
 }
 
 func makePeerKey(peerID discv5.NodeID, topic discv5.Topic) []byte {
-	topicLth := len([]byte(topic))
-	lth := topicLth + len(peerID)
+	topicLen := len([]byte(topic))
+	lth := topicLen + len(peerID)
 	key := make([]byte, lth)
 	copy(key[:], []byte(topic)[:])
-	copy(key[topicLth:], peerID[:])
+	copy(key[topicLen:], peerID[:])
 	return key
 }
 
@@ -42,8 +42,8 @@ func (d *Cache) RemovePeer(peerID discv5.NodeID, topic discv5.Topic) error {
 
 // GetPeersRange returns peers for a given topic with a limit.
 func (d *Cache) GetPeersRange(topic discv5.Topic, limit int) (nodes []*discv5.Node) {
-	topicLth := len([]byte(topic))
-	key := make([]byte, topicLth)
+	topicLen := len([]byte(topic))
+	key := make([]byte, topicLen)
 	copy(key[:], []byte(topic))
 	iterator := d.db.NewIterator(&util.Range{Start: key}, nil)
 	defer iterator.Release()

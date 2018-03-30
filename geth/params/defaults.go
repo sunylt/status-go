@@ -8,7 +8,7 @@ const (
 	DataDir = "statusd-data"
 
 	// StatusDatabase path relative to DataDir.
-	StatusDatabase = "status"
+	StatusDatabase = "status-db"
 
 	// KeyStoreDir is default directory where private keys are stored, relative to DataDir
 	KeyStoreDir = "keystore"

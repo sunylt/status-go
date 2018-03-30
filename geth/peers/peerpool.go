@@ -20,9 +20,10 @@ var (
 )
 
 const (
+	// expirationPeriod is a amount of time while peer is considered as a connectable
 	expirationPeriod = 60 * time.Minute
 	// DefaultFastSync is a recommended value for aggressive peers search.
-	DefaultFastSync = 500 * time.Millisecond
+	DefaultFastSync = 3 * time.Second
 	// DefaultSlowSync is a recommended value for slow (background) peers search.
 	DefaultSlowSync = 30 * time.Minute
 )
@@ -61,13 +62,16 @@ type PeerPool struct {
 	subscriptions []event.Subscription
 	quit          chan struct{}
 
-	wg sync.WaitGroup
+	consumerWG sync.WaitGroup
+	discvWG    sync.WaitGroup
 }
 
 // init creates data structures used by peer pool
 // thread safety must be guaranteed by caller
 func (p *PeerPool) init() {
+	p.quit = make(chan struct{})
 	p.subscriptions = make([]event.Subscription, 0, len(p.config))
+	// sync periods are stored because we need to close them once pool is stopped
 	p.syncPeriods = make([]chan time.Duration, 0, len(p.config))
 	p.peers = make(map[discv5.Topic]map[discv5.NodeID]*peerInfo)
 	for topic := range p.config {
@@ -83,14 +87,12 @@ func (p *PeerPool) Start(server *p2p.Server) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.quit = make(chan struct{})
-	// sync periods are stored because we need to close them once pool is stopped
 	p.init()
 
-	// 2 goroutines per each topic
-	p.wg.Add(len(p.config) * 2)
+	p.consumerWG.Add(len(p.config))
+	p.discvWG.Add(len(p.config))
 	for topic, limits := range p.config {
-		topic := topic
+		topic := topic // bind topic to be used in goroutine
 		period := make(chan time.Duration, 2)
 		p.syncPeriods = append(p.syncPeriods, period)
 		found := make(chan *discv5.Node, 10)
@@ -107,12 +109,12 @@ func (p *PeerPool) Start(server *p2p.Server) error {
 		log.Debug("running peering for", "topic", topic, "limits", limits)
 		go func() {
 			server.DiscV5.SearchTopic(topic, period, found, lookup)
-			p.wg.Done()
+			p.discvWG.Done()
 		}()
 
 		go func() {
 			p.handlePeersFromTopic(server, topic, period, found, lookup, events)
-			p.wg.Done()
+			p.consumerWG.Done()
 		}()
 	}
 	return nil
@@ -127,35 +129,37 @@ func (p *PeerPool) handlePeersFromTopic(server *p2p.Server, topic discv5.Topic, 
 	for {
 		select {
 		case <-p.quit:
+			log.Debug("exited consumer", "topic", topic)
 			return
 		case node := <-found:
 			log.Debug("found node with", "ID", node.ID, "topic", topic)
 			if node.ID == selfID {
 				continue
 			}
-			if p.processFoundNode(server, connected, topic, node) {
-				connected++
-			}
-			// switch period only once
-			if fast && connected >= limits[0] {
-				log.Debug("switch to slow sync", "topic", topic, "sync", p.slowSync)
-				period <- p.slowSync
-				fast = false
-			}
+			p.processFoundNode(server, connected, topic, node)
 		case <-lookup:
 			// just drain this channel for now, it can be used to intelligently
 			// limit number of kademlia lookups
 		case event := <-events:
 			if event.Type == p2p.PeerEventTypeDrop {
 				log.Debug("node dropped", "ID", event.Peer, "topic", topic)
-				if !p.processDroppedNode(server, topic, event.Peer) {
+				if p.processDroppedNode(server, topic, event.Peer, event.Error) {
 					connected--
+					if !fast && connected < limits[0] {
+						log.Debug("switch to fast sync", "topic", topic, "sync", p.fastSync)
+						period <- p.fastSync
+						fast = true
+					}
 				}
-				// switch period only once
-				if !fast && connected < limits[0] {
-					log.Debug("switch to fast sync", "topic", topic, "sync", p.fastSync)
-					period <- p.fastSync
-					fast = true
+			} else if event.Type == p2p.PeerEventTypeAdd {
+				if p.processAddedNode(server, connected, event.Peer, topic) {
+					connected++
+					log.Debug("currently connected", "topic", topic, "N", connected)
+					if fast && connected >= limits[0] {
+						log.Debug("switch to slow sync", "topic", topic, "sync", p.slowSync)
+						period <- p.slowSync
+						fast = false
+					}
 				}
 			}
 		}
@@ -165,9 +169,9 @@ func (p *PeerPool) handlePeersFromTopic(server *p2p.Server, topic discv5.Topic, 
 // processFoundNode called when node is discovered by kademlia search query
 // 2 important conditions
 // 1. every time when node is processed we need to update discoveredTime and reset dropped boolean.
-//    peer will be considered as valid later only if it was discovered < 90s ago and wasn't dropped recently
+//    peer will be considered as valid later only if it was discovered < 60m ago and wasn't dropped recently
 // 2. if peer is connected or if max limit is reached we are not a adding peer to p2p server
-func (p *PeerPool) processFoundNode(server *p2p.Server, currentlyConnected int, topic discv5.Topic, node *discv5.Node) (connected bool) {
+func (p *PeerPool) processFoundNode(server *p2p.Server, currentlyConnected int, topic discv5.Topic, node *discv5.Node) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	peersTable := p.peers[topic]
@@ -181,45 +185,80 @@ func (p *PeerPool) processFoundNode(server *p2p.Server, currentlyConnected int, 
 		}
 	}
 	if currentlyConnected < limits[1] && !peersTable[node.ID].connected {
-		log.Debug("peer connected", "ID", node.ID, "topic", topic)
-		server.AddPeer(discover.NewNode(
-			discover.NodeID(peersTable[node.ID].node.ID),
-			peersTable[node.ID].node.IP,
-			peersTable[node.ID].node.UDP,
-			peersTable[node.ID].node.TCP,
-		))
-		peersTable[node.ID].connected = true
-		connected = true
-		if p.cache != nil {
-			if err := p.cache.AddPeer(node, topic); err != nil {
-				log.Error("failed to persist a peer", "error", err)
-			}
+		log.Debug("peer found", "ID", node.ID, "topic", topic)
+		p.addPeer(server, peersTable[node.ID], topic)
+	}
+	return
+}
+
+func (p *PeerPool) processAddedNode(server *p2p.Server, currentlyConnected int, nodeID discover.NodeID, topic discv5.Topic) bool {
+	log.Debug("new connection confirmed", "ID", nodeID)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	peersTable := p.peers[topic]
+	limits := p.config[topic]
+	// inbound connection
+	peer, exist := peersTable[discv5.NodeID(nodeID)]
+	if !exist {
+		return false
+	}
+	// established connection means that the node is a viable candidate for a connection and can be cached
+	if p.cache != nil {
+		if err := p.cache.AddPeer(peer.node, topic); err != nil {
+			log.Error("failed to persist a peer", "error", err)
 		}
 	}
-	return connected
+	// when max limit is reached drop every peer after
+	if currentlyConnected == limits[1] {
+		log.Debug("max limit is reached drop the peer", "ID", nodeID, "topic", topic)
+		p.removePeer(server, peer, topic)
+		return false
+	}
+	// don't count same peer twice
+	if !peer.connected {
+		log.Debug("marking as connected", "ID", nodeID)
+		peer.connected = true
+		return true
+	}
+	return false
 }
 
 // processDroppedNode is called when node was dropped by p2p server
 // - removes a peer, cause p2p server now relies on peer pool to maintain required connections number
 // - if there is a valid peer in peer table add it to a p2p server
 //   peer is valid if it wasn't dropped recently, it is not stale (90s) and not currently connected
-func (p *PeerPool) processDroppedNode(server *p2p.Server, topic discv5.Topic, nodeID discover.NodeID) bool {
+// returns true if dropped node should decrement connected counter, e.g. false if:
+// - peer connected with different topic
+// - peer is inbound connection with unknown topic
+// - we requested disconnect
+func (p *PeerPool) processDroppedNode(server *p2p.Server, topic discv5.Topic, nodeID discover.NodeID, reason string) (dropped bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	peersTable := p.peers[topic]
 	// either inbound or connected from another topic
-	if _, exist := peersTable[discv5.NodeID(nodeID)]; !exist {
-		return true
+	peer, exist := p.peers[topic][discv5.NodeID(nodeID)]
+	if !exist {
+		return false
 	}
-	p.removePeer(server, nodeID, topic)
+	log.Debug("disconnect reason", "peer", nodeID, "reason", reason)
+	// if requested - we don't need to remove peer from cache and look for a replacement
+	if reason == p2p.DiscRequested.Error() {
+		return false
+	}
+	p.removePeer(server, peer, topic)
+	delete(p.peers[topic], discv5.NodeID(nodeID))
+	if p.cache != nil {
+		if err := p.cache.RemovePeer(discv5.NodeID(nodeID), topic); err != nil {
+			log.Error("failed to remove peer from cache", "error", err)
+		}
+	}
 	// TODO use a heap queue and always get a peer that was discovered recently
-	for _, info := range peersTable {
-		if !info.connected && mclock.Now() < info.discoveredTime+mclock.AbsTime(expirationPeriod) {
-			p.addPeer(server, info, topic)
+	for _, peer := range p.peers[topic] {
+		if !peer.connected && mclock.Now() < peer.discoveredTime+mclock.AbsTime(expirationPeriod) {
+			p.addPeer(server, peer, topic)
 			return true
 		}
 	}
-	return false
+	return true
 }
 
 func (p *PeerPool) addPeer(server *p2p.Server, info *peerInfo, topic discv5.Topic) {
@@ -229,35 +268,20 @@ func (p *PeerPool) addPeer(server *p2p.Server, info *peerInfo, topic discv5.Topi
 		info.node.UDP,
 		info.node.TCP,
 	))
-	info.connected = true
-	if p.cache != nil {
-		if err := p.cache.AddPeer(info.node, topic); err != nil {
-			log.Error("failed to persist a peer", "error", err)
-		}
-	}
 }
 
-func (p *PeerPool) removePeer(server *p2p.Server, nodeID discover.NodeID, topic discv5.Topic) {
-	info := p.peers[topic][discv5.NodeID(nodeID)]
+func (p *PeerPool) removePeer(server *p2p.Server, info *peerInfo, topic discv5.Topic) {
 	server.RemovePeer(discover.NewNode(
 		discover.NodeID(info.node.ID),
 		info.node.IP,
 		info.node.UDP,
 		info.node.TCP,
 	))
-	delete(p.peers[topic], discv5.NodeID(nodeID))
-	if p.cache != nil {
-		if err := p.cache.RemovePeer(discv5.NodeID(nodeID), topic); err != nil {
-			log.Error("failed to remove peer from cache", "error", err)
-		}
-	}
 }
 
 // Stop closes pool quit channel and all channels that are watched by search queries
 // and waits till all goroutines will exit.
 func (p *PeerPool) Stop() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	// pool wasn't started
 	if p.quit == nil {
 		return
@@ -266,13 +290,17 @@ func (p *PeerPool) Stop() {
 	case <-p.quit:
 		return
 	default:
+		log.Debug("started closing peer pool")
+		close(p.quit)
 	}
-	close(p.quit)
+	log.Debug("waiting for consumer goroutines to exit")
+	p.consumerWG.Wait()
 	for _, period := range p.syncPeriods {
 		close(period)
 	}
 	for _, sub := range p.subscriptions {
 		sub.Unsubscribe()
 	}
-	p.wg.Wait()
+	log.Debug("waiting for discovery requests to exit")
+	p.discvWG.Wait()
 }

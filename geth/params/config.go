@@ -187,8 +187,6 @@ type Limits [2]int
 // UpstreamRPCConfig
 // ----------
 
-//=====================================================================================
-
 // UpstreamRPCConfig stores configuration for upstream rpc connection.
 type UpstreamRPCConfig struct {
 	// Enabled flag specifies whether feature is enabled

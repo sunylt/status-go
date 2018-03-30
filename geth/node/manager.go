@@ -141,11 +141,11 @@ func (m *Manager) stopNode() error {
 		return err
 	}
 	if m.node.Server().DiscV5 != nil {
+		m.register.Stop()
+		m.peerPool.Stop()
 		if err := m.db.Close(); err != nil {
 			m.log.Error("error closing status db", "error", err)
 		}
-		m.register.Stop()
-		m.peerPool.Stop()
 	}
 	if err := m.node.Stop(); err != nil {
 		return err
